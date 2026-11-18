@@ -9,9 +9,13 @@ plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="통합 단체 출석부", layout="wide")
 
-# 1. 세션 상태 초기화 (가장 먼저 실행되어야 에러가 안 납니다!)
+# 1. 세션 상태 초기화
 if "meetings" not in st.session_state:
     st.session_state.meetings = {}
+
+# 삭제 확인용 상태 변수 초기화
+if "confirm_delete" not in st.session_state:
+    st.session_state.confirm_delete = False
 
 st.sidebar.header("⚙️ 출석부 관리")
 
@@ -44,10 +48,23 @@ if meeting_names:
             st.session_state.meetings[new_name] = st.session_state.meetings.pop(selected_meeting)
             st.rerun()
             
-    # 모임 삭제 기능
-    if st.sidebar.button("현재 모임 삭제하기"):
-        del st.session_state.meetings[selected_meeting]
-        st.rerun()
+    # 모임 삭제 기능 (확인 메시지 추가)
+    if not st.session_state.confirm_delete:
+        if st.sidebar.button("현재 모임 삭제하기"):
+            st.session_state.confirm_delete = True
+            st.rerun()
+    else:
+        st.sidebar.error(f"⚠️ '{selected_meeting}'을(를) 정말 삭제하시겠습니까?")
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.sidebar.button("예, 삭제"):
+                del st.session_state.meetings[selected_meeting]
+                st.session_state.confirm_delete = False
+                st.rerun()
+        with col2:
+            if st.sidebar.button("아니오"):
+                st.session_state.confirm_delete = False
+                st.rerun()
         
     st.sidebar.markdown("---")
     
