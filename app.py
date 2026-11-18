@@ -9,20 +9,11 @@ plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="통합 단체 출석부", layout="wide")
 
-# 세션 상태에 여러 모임 데이터 저장소 초기화 (없으면 기본 모임 생성)
-if "meetings" not in st.session_state:
-    st.session_state.meetings = {
-        "독서 모임": {
-            "members": "김철수, 이영희, 박지민",
-            "data": pd.DataFrame(columns=["날짜", "이름", "출석상태", "비고"])
-        },
-        "축구 모임": {
-            "members": "정민지, 최동욱, 김철수, 이영희",
-            "data": pd.DataFrame(columns=["날짜", "이름", "출석상태", "비고"])
-        }
-    }
-
 st.sidebar.header("⚙️ 출석부 관리")
+
+# 세션 상태 초기화 (기본 모임 없이 빈 상태로 시작)
+if "meetings" not in st.session_state:
+    st.session_state.meetings = {}
 
 # 1. 새 모임 추가 기능
 st.sidebar.subheader("➕ 새 모임 만들기")
