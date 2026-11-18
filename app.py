@@ -11,6 +11,37 @@ st.set_page_config(page_title="통합 단체 출석부", layout="wide")
 
 st.sidebar.header("⚙️ 출석부 관리")
 
+# 현재 존재하는 모임 목록 가져오기
+meeting_names = list(st.session_state.meetings.keys())
+
+if meeting_names:
+    selected_meeting = st.sidebar.selectbox("관리할 모임 선택", meeting_names)
+    
+    # 1. 모임 이름 변경 기능
+    new_name = st.sidebar.text_input("선택한 모임 새 이름 변경", value=selected_meeting)
+    if st.sidebar.button("이름 변경하기"):
+        if new_name and new_name not in st.session_state.meetings:
+            st.session_state.meetings[new_name] = st.session_state.meetings.pop(selected_meeting)
+            st.rerun()
+            
+    # 2. 모임 삭제 기능
+    if st.sidebar.button("현재 모임 삭제하기"):
+        del st.session_state.meetings[selected_meeting]
+        st.rerun()
+else:
+    st.sidebar.info("등록된 모임이 없습니다. 아래에서 새 모임을 만들어주세요.")
+
+# 3. 새 모임 만들기 기능
+st.sidebar.subheader("➕ 새 모임 만들기")
+new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder="예: 30구역모임")
+if st.sidebar.button("모임 추가하기"):
+    if new_meeting_name and new_meeting_name not in st.session_state.meetings:
+        st.session_state.meetings[new_meeting_name] = {
+            "members": "참가자1, 참가자2",
+            "data": pd.DataFrame(columns=["날짜", "이름", "출석상태", "비교"])
+        }
+        st.rerun()
+        
 # 세션 상태 초기화 (기본 모임 없이 빈 상태로 시작)
 if "meetings" not in st.session_state:
     st.session_state.meetings = {}
