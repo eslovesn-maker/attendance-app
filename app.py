@@ -27,7 +27,6 @@ if "birthday_toast_shown" not in st.session_state:
 
 
 def format_date_with_weekday(date_str: str) -> str:
-    """'YYYY-MM-DD' -> 'YYYY-MM-DD(월)'"""
     try:
         dt = datetime.date.fromisoformat(str(date_str).strip())
         return f"{dt.isoformat()}({WEEKDAY_KO[dt.weekday()]})"
@@ -36,7 +35,6 @@ def format_date_with_weekday(date_str: str) -> str:
 
 
 def apply_warm_theme() -> None:
-    """따뜻하고 부드러운 크림/코랄 톤 스타일 적용 및 날짜 버튼 간격 좁히기"""
     st.markdown(
         """
         <style>
@@ -107,33 +105,9 @@ def apply_warm_theme() -> None:
             border-radius: 14px;
             padding: 6px;
         }
-        .rec-date-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            margin-top: 4px;
-            margin-bottom: 6px;
-        }
-        .rec-date-row div[data-testid="stButton"] {
-            width: auto !important;
-            display: inline-flex !important;
-        }
-        .rec-date-row div.stButton > button {
-            width: auto !important;
-            background-color: #FFE8E5;
-            color: #B83227;
-            border: 1px solid #F3B2AA;
-            border-radius: 999px;
-            padding: 2px 9px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            min-height: 1.75rem;
-            line-height: 1.2;
-        }
-        .rec-date-row div.stButton > button:hover {
-            background-color: #FFD2CC;
-            color: #8F1D14;
-            border-color: #E58D82;
+        div[data-testid="stHorizontalBlock"] {
+            gap: 6px !important;
+            flex-wrap: wrap !important;
         }
         </style>
         """,
@@ -622,21 +596,21 @@ if meeting_names:
             if recorded_dates:
                 st.markdown(
                     "<span style='font-size:0.84rem; color:#B83227; font-weight:600;'>"
-                    "📌 출석 기록 있는 날짜 (오래된 순, 클릭 시 이동):</span>",
+                    "📌 출석 기록 있는 날짜</span>",
                     unsafe_allow_html=True,
                 )
-                shown_dates = recorded_dates[:16]
-                st.markdown('<div class="rec-date-row">', unsafe_allow_html=True)
-                for d_str in shown_dates:
-                    st.button(
-                        f"● {format_date_with_weekday(d_str)}",
-                        key=f"red_btn_{selected_meeting}_{d_str}",
-                        on_click=_set_target_date,
-                        args=(d_str,),
-                    )
-                st.markdown("</div>", unsafe_allow_html=True)
-                if len(recorded_dates) > 16:
-                    st.caption(f"앞 16개 기록일 표시 (전체 {len(recorded_dates)}건)")
+                shown_dates = recorded_dates[:12]
+                date_cols = st.columns(len(shown_dates))
+                for idx, d_str in enumerate(shown_dates):
+                    with date_cols[idx]:
+                        st.button(
+                            f"● {format_date_with_weekday(d_str)}",
+                            key=f"red_btn_{selected_meeting}_{d_str}",
+                            on_click=_set_target_date,
+                            args=(d_str,),
+                        )
+                if len(recorded_dates) > 12:
+                    st.caption(f"앞 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
             else:
                 st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
 
@@ -870,3 +844,32 @@ if meeting_names:
                             st.write(f"• **{name}** — {m}월 {d_num}일{suffix}")
                     else:
                         st.caption("등록된 생일자 없음")
+
+        if all_birthdays:
+            st.markdown("---")
+            with st.expander("📋 등록된 전체 생일 목록 및 삭제"):
+                list_df = pd.DataFrame(
+                    [
+                        {
+                            "이름": r["member_name"],
+                            "생일(MM-DD)": r["birthday"],
+                            "메모": r["memo"],
+                        }
+                        for r in all_birthdays
+                    ]
+                )
+                st.dataframe(list_df, use_container_width=True, hide_index=True)
+
+                del_target = st.selectbox(
+                    "삭제할 인원 선택",
+                    [r["member_name"] for r in all_birthdays],
+                    key="del_bday_target",
+                )
+                if st.button("🗑️ 선택한 생일 삭제", key="btn_del_bday"):
+                    delete_birthday(del_target)
+                    st.success(f"'{del_target}'님의 생일 정보가 삭제되었습니다.")
+                    st.rerun()
+else:
+    st.title("🌻 통합 단체 출석부")
+    render_birthday_alerts(all_birthdays, alert_days=alert_window)
+    st.info("👈 왼쪽 사이드바에서 **새 모임 만들기**를 통해 모임을 먼저 추가해 주세요!")
