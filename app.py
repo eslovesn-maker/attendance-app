@@ -750,4 +750,58 @@ if meeting_names:
                 if not b_name.strip():
                     st.warning("이름을 입력해 주세요.")
                 elif not norm_bday:
-                    st.warning("생일을 '03
+                    st.warning("생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
+                else:
+                    upsert_birthday(b_name, norm_bday, b_memo)
+                    st.success(f"'{b_name.strip()}'님의 생일({norm_bday})이 전체 생일 명단에 저장되었습니다!")
+                    st.rerun()
+
+        st.markdown("---")
+        st.write("### 🗓️ 1월 ~ 12월 월별 생일자 모아보기")
+
+        monthly_groups = {m: [] for m in range(1, 13)}
+        for row in all_birthdays:
+            m_num, d_num = map(int, row["birthday"].split("-"))
+            monthly_groups[m_num].append((d_num, row["member_name"], row["memo"]))
+
+        month_cols = st.columns(4)
+        for m in range(1, 13):
+            with month_cols[(m - 1) % 4]:
+                with st.container(border=True):
+                    st.markdown(f"**{m}월**")
+                    entries = sorted(monthly_groups[m], key=lambda x: x[0])
+                    if entries:
+                        for d_num, name, memo in entries:
+                            suffix = f" ({memo})" if memo else ""
+                            st.write(f"• **{name}** — {m}월 {d_num}일{suffix}")
+                    else:
+                        st.caption("등록된 생일자 없음")
+
+        if all_birthdays:
+            st.markdown("---")
+            with st.expander("📋 등록된 전체 생일 목록 및 삭제"):
+                list_df = pd.DataFrame(
+                    [
+                        {
+                            "이름": r["member_name"],
+                            "생일(MM-DD)": r["birthday"],
+                            "메모": r["memo"],
+                        }
+                        for r in all_birthdays
+                    ]
+                )
+                st.dataframe(list_df, use_container_width=True, hide_index=True)
+
+                del_target = st.selectbox(
+                    "삭제할 인원 선택",
+                    [r["member_name"] for r in all_birthdays],
+                    key="del_bday_target",
+                )
+                if st.button("🗑️ 선택한 생일 삭제", key="btn_del_bday"):
+                    delete_birthday(del_target)
+                    st.success(f"'{del_target}'님의 생일 정보가 삭제되었습니다.")
+                    st.rerun()
+else:
+    st.title("📊 통합 단체 출석부")
+    render_birthday_alerts(all_birthdays, alert_days=alert_window)
+    st.info("👈 왼쪽 사이드바에서 **새 모임 만들기**를 통해 모임을 먼저 추가해 주세요!")
