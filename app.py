@@ -8,6 +8,7 @@ from supabase import Client, create_client
 st.set_page_config(page_title="통합 단체 출석부", page_icon="🌿", layout="wide")
 
 PHOTO_BUCKET = "attendance-photos"
+WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 @st.cache_resource
@@ -25,8 +26,17 @@ if "birthday_toast_shown" not in st.session_state:
     st.session_state.birthday_toast_shown = False
 
 
+def format_date_with_weekday(date_str: str) -> str:
+    """'YYYY-MM-DD' -> 'YYYY-MM-DD(월)'"""
+    try:
+        dt = datetime.date.fromisoformat(str(date_str).strip())
+        return f"{dt.isoformat()}({WEEKDAY_KO[dt.weekday()]})"
+    except ValueError:
+        return str(date_str)
+
+
 def apply_warm_theme() -> None:
-    """따뜻하고 부드러운 크림/코랄 톤 스타일 적용"""
+    """따뜻하고 부드러운 크림/코랄 톤 스타일 적용 및 날짜 버튼 간격 좁히기"""
     st.markdown(
         """
         <style>
@@ -34,17 +44,14 @@ def apply_warm_theme() -> None:
             background: linear-gradient(180deg, #FCF9F4 0%, #F7F1E7 100%);
             color: #3A322C;
         }
-
         section[data-testid="stSidebar"] {
             background-color: #F3ECE0;
             border-right: 1px solid #E6DACA;
         }
-
         h1, h2, h3 {
             color: #3A2E26;
             letter-spacing: -0.01em;
         }
-
         button[data-baseweb="tab"] {
             background-color: #F6EFE4;
             border-radius: 12px 12px 0 0;
@@ -59,7 +66,6 @@ def apply_warm_theme() -> None:
             color: #C85A32;
             border-bottom-color: #FFFDF9;
         }
-
         div[data-testid="stForm"],
         div[data-testid="stExpander"] > details {
             background-color: #FFFDF9;
@@ -68,7 +74,6 @@ def apply_warm_theme() -> None:
             padding: 12px 16px;
             box-shadow: 0 4px 14px rgba(92, 70, 50, 0.04);
         }
-
         div.stButton > button,
         div.stDownloadButton > button {
             background-color: #FFF7EE;
@@ -84,7 +89,6 @@ def apply_warm_theme() -> None:
             border-color: #D49377;
             color: #5C2B18;
         }
-
         div[data-testid="stFormSubmitButton"] > button {
             background-color: #D96B43;
             color: #FFFFFF;
@@ -97,28 +101,41 @@ def apply_warm_theme() -> None:
             background-color: #C25832;
             color: #FFFFFF;
         }
-
-        div.stButton > button.red-date-btn {
-            background-color: #FFE8E5;
-            color: #B83227;
-            border: 1px solid #F3B2AA;
-            border-radius: 999px;
-            padding: 2px 10px;
-            font-size: 0.82rem;
-            font-weight: 600;
-            min-height: 1.9rem;
-        }
-        div.stButton > button.red-date-btn:hover {
-            background-color: #FFD2CC;
-            color: #8F1D14;
-            border-color: #E58D82;
-        }
-
         div[data-testid="stDataFrame"] {
             background-color: #FFFDF9;
             border: 1px solid #EADFD0;
             border-radius: 14px;
             padding: 6px;
+        }
+
+        /* 기록일 칩 버튼 가로 배치 및 간격 좁히기 */
+        .rec-date-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 4px;
+            margin-bottom: 6px;
+        }
+        .rec-date-row div[data-testid="stButton"] {
+            width: auto !important;
+            display: inline-flex !important;
+        }
+        .rec-date-row div.stButton > button {
+            width: auto !important;
+            background-color: #FFE8E5;
+            color: #B83227;
+            border: 1px solid #F3B2AA;
+            border-radius: 999px;
+            padding: 2px 9px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-height: 1.75rem;
+            line-height: 1.2;
+        }
+        .rec-date-row div.stButton > button:hover {
+            background-color: #FFD2CC;
+            color: #8F1D14;
+            border-color: #E58D82;
         }
         </style>
         """,
@@ -130,7 +147,6 @@ apply_warm_theme()
 
 
 def normalize_mmdd(raw_val: str) -> str | None:
-    """'03-15', '3/15', '3.15', '3월 15일' 등을 'MM-DD'로 정규화"""
     if not raw_val:
         return None
     cleaned = (
@@ -152,7 +168,6 @@ def normalize_mmdd(raw_val: str) -> str | None:
 
 
 def days_until_birthday(mmdd: str, today: datetime.date) -> int | None:
-    """오늘 기준으로 다가오는 생일까지 남은 일수(오늘이면 0)"""
     norm = normalize_mmdd(mmdd)
     if not norm:
         return None
@@ -225,7 +240,6 @@ def load_meetings() -> dict:
 
 
 def collect_known_members(meetings_map: dict, all_birthdays: list[dict], df: pd.DataFrame) -> list[str]:
-    """등록된 생일 명단, 모든 모임 명단, 출석 기록에 등장한 전체 인원 목록 수집"""
     names: list[str] = []
     for b in all_birthdays:
         n = (b.get("member_name") or "").strip()
@@ -319,7 +333,6 @@ def delete_photo_record(photo_row: dict) -> None:
 
 
 def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """월별 출석 현황표(●/△/X)와 월별 출석률 추이 데이터프레임 반환"""
     months = [f"{m}월" for m in range(1, 13)]
     parsed_dates = pd.to_datetime(stat_df["날짜"], errors="coerce")
     work_df = stat_df.copy()
@@ -373,7 +386,6 @@ def to_csv_bytes(df: pd.DataFrame) -> bytes:
 
 
 def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> None:
-    """접속 시 오늘 생일 및 다가오는 생일 알림 배너/토스트 표시"""
     today = datetime.date.today()
     today_list = []
     upcoming_list = []
@@ -543,9 +555,7 @@ if meeting_names:
     if member_text_key not in st.session_state:
         st.session_state[member_text_key] = current_members_str
 
-    names_input = st.sidebar.text_area(
-        "참석자 명단 (쉼표로 구분)", key=member_text_key
-    )
+    names_input = st.sidebar.text_area("참석자 명단 (쉼표로 구분)", key=member_text_key)
     current_parsed_members = [name.strip() for name in names_input.split(",") if name.strip()]
 
     df = load_attendance(selected_meeting)
@@ -596,7 +606,7 @@ if meeting_names:
             st.session_state[date_input_key] = datetime.date.today()
 
         recorded_dates = (
-            sorted(df["날짜"].astype(str).unique().tolist(), reverse=True)
+            sorted(df["날짜"].astype(str).unique().tolist(), reverse=False)
             if not df.empty and "날짜" in df.columns
             else []
         )
@@ -614,21 +624,21 @@ if meeting_names:
             if recorded_dates:
                 st.markdown(
                     "<span style='font-size:0.84rem; color:#B83227; font-weight:600;'>"
-                    "📌 출석 기록 있는 날짜 (클릭 시 이동):</span>",
+                    "📌 출석 기록 있는 날짜 (오래된 순, 클릭 시 이동):</span>",
                     unsafe_allow_html=True,
                 )
-                shown_dates = recorded_dates[:12]
-                btn_cols = st.columns(4)
-                for idx, d_str in enumerate(shown_dates):
-                    with btn_cols[idx % 4]:
-                        st.button(
-                            f"● {d_str}",
-                            key=f"red_btn_{selected_meeting}_{d_str}",
-                            on_click=_set_target_date,
-                            args=(d_str,),
-                        )
-                if len(recorded_dates) > 12:
-                    st.caption(f"최근 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
+                shown_dates = recorded_dates[:16]
+                st.markdown('<div class="rec-date-row">', unsafe_allow_html=True)
+                for d_str in shown_dates:
+                    st.button(
+                        f"● {format_date_with_weekday(d_str)}",
+                        key=f"red_btn_{selected_meeting}_{d_str}",
+                        on_click=_set_target_date,
+                        args=(d_str,),
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
+                if len(recorded_dates) > 16:
+                    st.caption(f"앞 16개 기록일 표시 (전체 {len(recorded_dates)}건)")
             else:
                 st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
 
@@ -641,6 +651,7 @@ if meeting_names:
             )
 
         date_str = str(meeting_date)
+        date_with_day = format_date_with_weekday(date_str)
         saved_photos = load_photos(selected_meeting, date_str)
 
         if group_photos:
@@ -651,29 +662,46 @@ if meeting_names:
             preview_cols = st.columns(len(selected_files))
             for idx, photo in enumerate(selected_files):
                 with preview_cols[idx]:
-                    st.image(photo, caption=f"미리보기 {idx+1} ({date_str})", use_container_width=True)
+                    st.image(photo, caption=f"미리보기 {idx+1} ({date_with_day})", use_container_width=True)
 
             if st.button("📷 선택한 사진 저장하기", key=f"save_photo_{selected_meeting}_{date_str}"):
                 for photo in selected_files:
                     upload_and_save_photo(photo, selected_meeting, date_str)
-                st.success(f"{date_str} 모임 사진이 Storage 및 DB에 저장되었습니다!")
+                st.success(f"{date_with_day} 모임 사진이 Storage 및 DB에 저장되었습니다!")
                 st.rerun()
 
         st.markdown("---")
-        st.write(f"🖼️ **저장된 모임 사진 ({date_str})**")
+        st.write(f"🖼️ **저장된 모임 사진 ({date_with_day})**")
         if saved_photos:
             photo_cols = st.columns(2)
             for idx, p_row in enumerate(saved_photos):
                 with photo_cols[idx % 2]:
                     st.image(
                         p_row["photo_url"],
-                        caption=f"저장된 사진 {idx+1} ({p_row['record_date']})",
+                        caption=f"저장된 사진 {idx+1} ({format_date_with_weekday(p_row['record_date'])})",
                         use_container_width=True,
                     )
                     if st.button("🗑️ 사진 삭제", key=f"del_photo_{p_row['id']}"):
                         delete_photo_record(p_row)
                         st.rerun()
         else:
-            st.info(f"🌷 {date_str}에 저장된 사진이 아직 없습니다. 위에서 사진을 선택 후 '선택한 사진 저장하기'를 눌러주세요.")
+            st.info(f"🌷 {date_with_day}에 저장된 사진이 아직 없습니다. 위에서 사진을 선택 후 '선택한 사진 저장하기'를 눌러주세요.")
 
-        all_meeting_photos = load
+        all_meeting_photos = load_photos(selected_meeting)
+        if all_meeting_photos:
+            with st.expander(f"🗂️ '{selected_meeting}' 날짜별 사진 갤러리 (총 {len(all_meeting_photos)}장)"):
+                gallery_cols = st.columns(3)
+                for idx, g_row in enumerate(all_meeting_photos):
+                    with gallery_cols[idx % 3]:
+                        st.image(
+                            g_row["photo_url"],
+                            caption=f"{format_date_with_weekday(g_row['record_date'])} (#{idx+1})",
+                            use_container_width=True,
+                        )
+
+        st.markdown("---")
+        st.write("### 🌷 멤버별 출석 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
+
+        existing_day_df = df[df["날짜"].astype(str) == date_str] if not df.empty else pd.DataFrame()
+        has_existing = not existing_day_df.empty
+        existing_status_map = {}
