@@ -1,15 +1,9 @@
 import datetime
-import io
 import uuid
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
-from PIL import Image
 from supabase import Client, create_client
-
-plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="통합 단체 출석부", layout="wide")
 
@@ -29,11 +23,46 @@ if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
 
 
+def parse_birthdays_str(raw_str: str) -> dict:
+    """'홍길동:03-15, 김철수:11-20' 또는 '홍길동:3/15' 형태를 {'홍길동': '03-15'}로 변환"""
+    result = {}
+    if not raw_str:
+        return result
+    for part in raw_str.split(","):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        name, bday = part.split(":", 1)
+        name = name.strip()
+        bday = bday.strip().replace("/", "-").replace(".", "-")
+        if not name or not bday:
+            continue
+        chunks = [c.strip() for c in bday.split("-") if c.strip()]
+        if len(chunks) >= 2 and chunks[0].isdigit() and chunks[1].isdigit():
+            m = int(chunks[0])
+            d = int(chunks[1])
+            if 1 <= m <= 12 and 1 <= d <= 31:
+                result[name] = f"{m:02d}-{d:02d}"
+    return result
+
+
+def format_birthdays_str(bday_map: dict) -> str:
+    return ", ".join(f"{name}:{bday}" for name, bday in bday_map.items() if bday)
+
+
 def load_meetings() -> dict:
-    res = supabase.table("meetings").select("meeting_name, members").order("meeting_name").execute()
+    res = (
+        supabase.table("meetings")
+        .select("meeting_name, members, birthdays")
+        .order("meeting_name")
+        .execute()
+    )
     meetings_dict = {}
     for row in res.data or []:
-        meetings_dict[row["meeting_name"]] = row["members"]
+        meetings_dict[row["meeting_name"]] = {
+            "members": row.get("members") or "",
+            "birthdays": row.get("birthdays") or "",
+        }
     return meetings_dict
 
 
@@ -109,6 +138,45 @@ def delete_photo_record(photo_row: dict) -> None:
     supabase.table("attendance_photos").delete().eq("id", photo_row["id"]).execute()
 
 
+def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> pd.DataFrame:
+    months = [f"{m}월" for m in range(1, 13)]
+    parsed_dates = pd.to_datetime(stat_df["날짜"], errors="coerce")
+    work_df = stat_df.copy()
+    work_df["월"] = parsed_dates.dt.month
+
+    priority = {"O": 3, "△": 2, "X": 1}
+    symbol_map = {"O": "●", "△": "△", "X": "X"}
+
+    all_names = list(dict.fromkeys(member_list + work_df["이름"].dropna().unique().tolist()))
+    grid_rows = []
+    month_counts = {m: 0 for m in range(1, 13)}
+
+    for idx, name in enumerate(all_names, start=1):
+        row_data = {"NO.": idx, "이름": name}
+        person_df = work_df[work_df["이름"] == name]
+        for m in range(1, 13):
+            col_label = f"{m}월"
+            m_sub = person_df[person_df["월"] == m]
+            if m_sub.empty:
+                row_data[col_label] = ""
+            else:
+                best_status = max(
+                    m_sub["출석상태"].tolist(),
+                    key=lambda s: priority.get(s, 0),
+                )
+                row_data[col_label] = symbol_map.get(best_status, best_status)
+                if best_status == "O":
+                    month_counts[m] += 1
+        grid_rows.append(row_data)
+
+    total_row = {"NO.": "", "이름": "계"}
+    for m in range(1, 13):
+        total_row[f"{m}월"] = month_counts[m] if month_counts[m] > 0 else 0
+    grid_rows.append(total_row)
+
+    return pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months)
+
+
 st.sidebar.header("⚙️ 출석부 관리")
 
 # 1. 새 모임 만들기 (자동 저장)
@@ -125,7 +193,11 @@ if st.sidebar.button("모임 추가하기"):
         st.sidebar.warning("이미 존재하는 모임 이름입니다.")
     else:
         supabase.table("meetings").insert(
-            {"meeting_name": new_meeting_name, "members": "참가자1, 참가자2"}
+            {
+                "meeting_name": new_meeting_name,
+                "members": "참가자1, 참가자2",
+                "birthdays": "",
+            }
         ).execute()
         st.sidebar.success(f"'{new_meeting_name}' 모임이 생성되었습니다!")
         st.rerun()
@@ -145,7 +217,8 @@ if meeting_names:
         elif new_name in meetings_map:
             st.sidebar.warning("이미 존재하는 모임 이름입니다.")
         else:
-            old_members = meetings_map[selected_meeting]
+            old_members = meetings_map[selected_meeting]["members"]
+            old_birthdays = meetings_map[selected_meeting]["birthdays"]
             old_records = (
                 supabase.table("attendance_records")
                 .select("record_date, member_name, status, note")
@@ -163,7 +236,11 @@ if meeting_names:
                 or []
             )
             supabase.table("meetings").insert(
-                {"meeting_name": new_name, "members": old_members}
+                {
+                    "meeting_name": new_name,
+                    "members": old_members,
+                    "birthdays": old_birthdays,
+                }
             ).execute()
             if old_records:
                 migrated = [
@@ -227,7 +304,8 @@ if meeting_names:
 
     # 4. 멤버 명단 수정 및 자동 저장
     st.sidebar.subheader(f"👥 [{selected_meeting}] 멤버 설정")
-    current_members_str = meetings_map[selected_meeting]
+    current_members_str = meetings_map[selected_meeting]["members"]
+    current_birthdays_str = meetings_map[selected_meeting]["birthdays"]
     names_input = st.sidebar.text_area(
         "참석자 명단 (쉼표로 구분)", value=current_members_str, key=f"members_{selected_meeting}"
     )
@@ -242,10 +320,11 @@ if meeting_names:
         st.rerun()
 
     member_list = [name.strip() for name in names_input.split(",") if name.strip()]
+    saved_bday_map = parse_birthdays_str(current_birthdays_str)
     df = load_attendance(selected_meeting)
 
     st.title(f"📊 {selected_meeting} 통합 출석부")
-    tab1, tab2 = st.tabs(["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이"])
+    tab1, tab2, tab3 = st.tabs(["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 월별 생일"])
 
     with tab1:
         st.subheader(f"'{selected_meeting}' 모임 출석 입력")
@@ -338,13 +417,19 @@ if meeting_names:
                 st.rerun()
 
     with tab2:
-        st.subheader(f"📈 '{selected_meeting}' 연간 출석 현황 및 추이")
+        st.subheader(f"📈 '{selected_meeting}' 연간 출석 현황")
         if df.empty:
             st.info("아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
         else:
             score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
             stat_df = df.copy()
             stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
+
+            st.write(f"### 📅 {selected_meeting} 월별 출석 현황")
+            monthly_df = build_monthly_grid(stat_df, member_list)
+            st.dataframe(monthly_df, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
 
             summary_df = stat_df.groupby("이름", as_index=False)["출석점수"].sum()
             summary_df.rename(columns={"출석점수": "환산 출석 점수"}, inplace=True)
@@ -354,26 +439,79 @@ if meeting_names:
             summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
 
             st.write("### 📋 멤버별 누적 출석 통계 (자동 합계)")
-            st.dataframe(summary_df, use_container_width=True)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
-            st.write("### 📊 날짜별 전체 참석 점수 추이")
-            trend_df = stat_df.groupby("날짜", as_index=False)["출석점수"].sum()
+    with tab3:
+        st.subheader(f"🎂 '{selected_meeting}' 월별 생일 현황")
+        st.caption("멤버별 생일을 입력해 저장하면 1월~12월 월별로 묶어서 한눈에 확인할 수 있습니다.")
 
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(
-                trend_df["날짜"],
-                trend_df["출석점수"],
-                marker="o",
-                color="#4F46E5",
-                linewidth=2,
-                markersize=8,
-            )
-            ax.set_title(f"[{selected_meeting}] 시간에 따른 모임 참석 점수 추이", fontsize=12, fontweight="bold")
-            ax.set_xlabel("모임 날짜")
-            ax.set_ylabel("참석 점수 합계 (O=1, △=0.5)")
-            ax.grid(True, linestyle="--", alpha=0.6)
-            plt.xticks(rotation=45)
-            st.pyplot(fig)
+        if not member_list:
+            st.info("먼저 왼쪽 사이드바에서 멤버 명단을 입력하고 저장해 주세요.")
+        else:
+            with st.form(key=f"birthday_form_{selected_meeting}"):
+                st.write("### ✏️ 멤버별 생일 입력 (예: 03-15 또는 3-15)")
+                bday_inputs = {}
+                cols = st.columns(3)
+                for idx, member in enumerate(member_list):
+                    with cols[idx % 3]:
+                        bday_inputs[member] = st.text_input(
+                            f"{member} 생일 (MM-DD)",
+                            value=saved_bday_map.get(member, ""),
+                            placeholder="예: 05-12",
+                            key=f"bday_{selected_meeting}_{member}",
+                        ).strip()
+
+                bday_submitted = st.form_submit_button("🎂 생일 저장하기")
+                if bday_submitted:
+                    updated_map = {}
+                    invalid_names = []
+                    for member, raw_val in bday_inputs.items():
+                        if not raw_val:
+                            continue
+                        parsed = parse_birthdays_str(f"{member}:{raw_val}")
+                        if member in parsed:
+                            updated_map[member] = parsed[member]
+                        else:
+                            invalid_names.append(member)
+
+                    encoded_str = format_birthdays_str(updated_map)
+                    supabase.table("meetings").update(
+                        {
+                            "birthdays": encoded_str,
+                            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        }
+                    ).eq("meeting_name", selected_meeting).execute()
+
+                    if invalid_names:
+                        st.warning(
+                            f"일부 멤버({', '.join(invalid_names)})는 'MM-DD' 형식(예: 03-15)이 아니어서 제외하고 저장했습니다."
+                        )
+                    else:
+                        st.success("멤버별 생일이 저장되었습니다!")
+                    st.rerun()
+
+            st.markdown("---")
+            st.write("### 🗓️ 월별 생일자 모아보기")
+
+            monthly_groups = {m: [] for m in range(1, 13)}
+            for member in member_list:
+                bday = saved_bday_map.get(member, "")
+                if bday and "-" in bday:
+                    m_num = int(bday.split("-")[0])
+                    d_num = int(bday.split("-")[1])
+                    monthly_groups[m_num].append((d_num, member, f"{m_num}월 {d_num}일"))
+
+            month_grid_cols = st.columns(4)
+            for m in range(1, 13):
+                with month_grid_cols[(m - 1) % 4]:
+                    with st.container(border=True):
+                        st.markdown(f"**{m}월**")
+                        entries = sorted(monthly_groups[m], key=lambda x: x[0])
+                        if entries:
+                            for _, name, label in entries:
+                                st.write(f"• {name} ({label})")
+                        else:
+                            st.caption("등록된 생일자 없음")
 else:
     st.title("📊 통합 단체 출석부")
     st.info("👈 왼쪽 사이드바에서 **'새 모임 만들기'**를 통해 모임을 먼저 추가해 주세요!")
