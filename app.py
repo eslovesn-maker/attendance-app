@@ -30,25 +30,21 @@ def apply_warm_theme() -> None:
     st.markdown(
         """
         <style>
-        /* 전체 배경 및 기본 글자 톤 */
         .stApp {
             background: linear-gradient(180deg, #FCF9F4 0%, #F7F1E7 100%);
             color: #3A322C;
         }
 
-        /* 사이드바 따뜻한 샌드 톤 */
         section[data-testid="stSidebar"] {
             background-color: #F3ECE0;
             border-right: 1px solid #E6DACA;
         }
 
-        /* 제목 및 서브헤더 여백/색감 */
         h1, h2, h3 {
             color: #3A2E26;
             letter-spacing: -0.01em;
         }
 
-        /* 탭 디자인 부드럽게 */
         button[data-baseweb="tab"] {
             background-color: #F6EFE4;
             border-radius: 12px 12px 0 0;
@@ -64,7 +60,6 @@ def apply_warm_theme() -> None:
             border-bottom-color: #FFFDF9;
         }
 
-        /* 폼 및 컨테이너 부드러운 카드 느낌 */
         div[data-testid="stForm"],
         div[data-testid="stExpander"] > details {
             background-color: #FFFDF9;
@@ -74,7 +69,6 @@ def apply_warm_theme() -> None:
             box-shadow: 0 4px 14px rgba(92, 70, 50, 0.04);
         }
 
-        /* 기본 버튼 따뜻한 코랄/크림 스타일 */
         div.stButton > button,
         div.stDownloadButton > button {
             background-color: #FFF7EE;
@@ -91,7 +85,6 @@ def apply_warm_theme() -> None:
             color: #5C2B18;
         }
 
-        /* 폼 제출 버튼 강조 */
         div[data-testid="stFormSubmitButton"] > button {
             background-color: #D96B43;
             color: #FFFFFF;
@@ -105,7 +98,6 @@ def apply_warm_theme() -> None:
             color: #FFFFFF;
         }
 
-        /* 출석 기록일 빨간 칩 스타일 */
         div.stButton > button.red-date-btn {
             background-color: #FFE8E5;
             color: #B83227;
@@ -122,7 +114,6 @@ def apply_warm_theme() -> None:
             border-color: #E58D82;
         }
 
-        /* 데이터프레임 카드 테두리 */
         div[data-testid="stDataFrame"] {
             background-color: #FFFDF9;
             border: 1px solid #EADFD0;
@@ -143,7 +134,8 @@ def normalize_mmdd(raw_val: str) -> str | None:
     if not raw_val:
         return None
     cleaned = (
-        raw_val.strip()
+        str(raw_val)
+        .strip()
         .replace("년", "-")
         .replace("월", "-")
         .replace("일", "")
@@ -420,7 +412,6 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
 
 st.sidebar.header("🌿 출석부 관리")
 
-# 1. 새 모임 만들기
 st.sidebar.subheader("✨ 새 모임 만들기")
 new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder="예: 31구역모임").strip()
 
@@ -447,7 +438,6 @@ st.sidebar.markdown("---")
 if meeting_names:
     selected_meeting = st.sidebar.selectbox("🏡 관리할 모임 선택", meeting_names)
 
-    # 2. 모임 이름 변경 (출석 기록 및 사진 기록도 함께 새 이름으로 이전 후 기존 행 삭제)
     new_name = st.sidebar.text_input("선택한 모임 새 이름 변경", value=selected_meeting).strip()
     if st.sidebar.button("✏️ 이름 변경하기"):
         if not new_name:
@@ -507,7 +497,6 @@ if meeting_names:
             supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
             st.rerun()
 
-    # 3. 모임 삭제 (영향 건수 안내 및 확인 단계 포함)
     if not st.session_state.confirm_delete:
         if st.sidebar.button("🧺 현재 모임 삭제하기"):
             st.session_state.confirm_delete = True
@@ -548,7 +537,6 @@ if meeting_names:
 
     st.sidebar.markdown("---")
 
-    # 4. 멤버 명단 수정 및 전체 인원 빠른 추가
     st.sidebar.subheader(f"🤝 [{selected_meeting}] 멤버 설정")
     current_members_str = meetings_map[selected_meeting]
     member_text_key = f"members_{selected_meeting}"
@@ -688,94 +676,4 @@ if meeting_names:
         else:
             st.info(f"🌷 {date_str}에 저장된 사진이 아직 없습니다. 위에서 사진을 선택 후 '선택한 사진 저장하기'를 눌러주세요.")
 
-        all_meeting_photos = load_photos(selected_meeting)
-        if all_meeting_photos:
-            with st.expander(f"🗂️ '{selected_meeting}' 날짜별 사진 갤러리 (총 {len(all_meeting_photos)}장)"):
-                gallery_cols = st.columns(3)
-                for idx, g_row in enumerate(all_meeting_photos):
-                    with gallery_cols[idx % 3]:
-                        st.image(
-                            g_row["photo_url"],
-                            caption=f"{g_row['record_date']} (#{idx+1})",
-                            use_container_width=True,
-                        )
-
-        st.markdown("---")
-        st.write("### 🌷 멤버별 출석 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
-
-        existing_day_df = df[df["날짜"].astype(str) == date_str] if not df.empty else pd.DataFrame()
-        has_existing = not existing_day_df.empty
-        existing_status_map = {}
-        existing_note = ""
-        if has_existing:
-            st.caption(f"✏️ **{date_str}**에 이미 저장된 출석 기록이 있어 기존 값을 불러왔습니다. 수정 후 저장하면 덮어씌워집니다.")
-            for _, r in existing_day_df.iterrows():
-                existing_status_map[str(r["이름"])] = r["출석상태"]
-            notes_non_empty = [str(n) for n in existing_day_df["비고"].dropna().tolist() if str(n).strip()]
-            if notes_non_empty:
-                existing_note = notes_non_empty[0]
-
-        status_options = ["O", "△", "X"]
-        with st.form(key=f"form_{selected_meeting}_{date_str}"):
-            attendance_status = {}
-            for member in member_list:
-                default_status = existing_status_map.get(member, "O")
-                default_idx = status_options.index(default_status) if default_status in status_options else 0
-                attendance_status[member] = st.radio(
-                    f"🍃 {member}",
-                    status_options,
-                    index=default_idx,
-                    horizontal=True,
-                    key=f"radio_{selected_meeting}_{date_str}_{member}",
-                )
-
-            note = st.text_input(
-                "☕ 이번 모임 특이사항 (예: 뒷풀이 장소 등)",
-                value=existing_note,
-                key=f"note_{selected_meeting}_{date_str}",
-            )
-            submitted = st.form_submit_button("🌿 출석 기록 자동 저장")
-
-            if submitted:
-                supabase.table("attendance_records").delete().eq(
-                    "meeting_name", selected_meeting
-                ).eq("record_date", date_str).execute()
-
-                if member_list:
-                    payload = [
-                        {
-                            "meeting_name": selected_meeting,
-                            "record_date": date_str,
-                            "member_name": member,
-                            "status": attendance_status[member],
-                            "note": note,
-                        }
-                        for member in member_list
-                    ]
-                    supabase.table("attendance_records").insert(payload).execute()
-
-                st.success(f"'{selected_meeting}'의 {date_str} 출석 기록이 DB에 자동 저장되었습니다!")
-                st.rerun()
-
-    with tab2:
-        st.subheader(f"📈 '{selected_meeting}' 연간 출석 현황")
-        if df.empty:
-            st.info("🌱 아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
-        else:
-            parsed_all_dates = pd.to_datetime(df["날짜"], errors="coerce")
-            available_years = sorted(
-                parsed_all_dates.dt.year.dropna().astype(int).unique().tolist(),
-                reverse=True,
-            )
-            year_options = ["전체 연도"] + [f"{y}년" for y in available_years]
-            selected_year_label = st.selectbox(
-                "🗓️ 조회 연도 필터",
-                year_options,
-                key=f"year_filter_{selected_meeting}",
-            )
-
-            if selected_year_label == "전체 연도":
-                filtered_df = df.copy()
-            else:
-                target_year = int(selected_year_label.replace("년", ""))
-                filtered_df = df[parsed_all_dates.dt.year == target_year].copy()
+        all_meeting_photos = load
