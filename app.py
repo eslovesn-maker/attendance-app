@@ -21,48 +21,92 @@ supabase = get_supabase_client()
 
 if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
+if "birthday_toast_shown" not in st.session_state:
+    st.session_state.birthday_toast_shown = False
 
 
-def parse_birthdays_str(raw_str: str) -> dict:
-    """'홍길동:03-15, 김철수:11-20' 또는 '홍길동:3/15' 형태를 {'홍길동': '03-15'}로 변환"""
-    result = {}
-    if not raw_str:
-        return result
-    for part in raw_str.split(","):
-        part = part.strip()
-        if ":" not in part:
-            continue
-        name, bday = part.split(":", 1)
-        name = name.strip()
-        bday = bday.strip().replace("/", "-").replace(".", "-")
-        if not name or not bday:
-            continue
-        chunks = [c.strip() for c in bday.split("-") if c.strip()]
-        if len(chunks) >= 2 and chunks[0].isdigit() and chunks[1].isdigit():
-            m = int(chunks[0])
-            d = int(chunks[1])
-            if 1 <= m <= 12 and 1 <= d <= 31:
-                result[name] = f"{m:02d}-{d:02d}"
-    return result
+def normalize_mmdd(raw_val: str) -> str | None:
+    """'03-15', '3/15', '3.15', '3월 15일' 등을 'MM-DD'로 정규화"""
+    if not raw_val:
+        return None
+    cleaned = (
+        raw_val.strip()
+        .replace("년", "-")
+        .replace("월", "-")
+        .replace("일", "")
+        .replace("/", "-")
+        .replace(".", "-")
+    )
+    parts = [p.strip() for p in cleaned.split("-") if p.strip()]
+    if len(parts) >= 2 and parts[-2].isdigit() and parts[-1].isdigit():
+        m = int(parts[-2])
+        d = int(parts[-1])
+        if 1 <= m <= 12 and 1 <= d <= 31:
+            return f"{m:02d}-{d:02d}"
+    return None
 
 
-def format_birthdays_str(bday_map: dict) -> str:
-    return ", ".join(f"{name}:{bday}" for name, bday in bday_map.items() if bday)
+def days_until_birthday(mmdd: str, today: datetime.date) -> int | None:
+    """오늘 기준으로 다가오는 생일까지 남은 일수(오늘이면 0)"""
+    norm = normalize_mmdd(mmdd)
+    if not norm:
+        return None
+    m, d = map(int, norm.split("-"))
+    for year in (today.year, today.year + 1):
+        try:
+            target = datetime.date(year, m, d)
+        except ValueError:
+            # 2월 29일 등 평년 처리
+            target = datetime.date(year, 2, 28)
+        if target >= today:
+            return (target - today).days
+    return None
+
+
+def load_all_birthdays() -> list[dict]:
+    res = (
+        supabase.table("member_birthdays")
+        .select("id, member_name, birthday, memo")
+        .order("birthday")
+        .order("member_name")
+        .execute()
+    )
+    rows = []
+    for row in res.data or []:
+        norm = normalize_mmdd(row.get("birthday") or "")
+        if norm:
+            rows.append(
+                {
+                    "id": row["id"],
+                    "member_name": row["member_name"],
+                    "birthday": norm,
+                    "memo": row.get("memo") or "",
+                }
+            )
+    return rows
+
+
+def upsert_birthday(member_name: str, mmdd: str, memo: str = "") -> None:
+    supabase.table("member_birthdays").upsert(
+        {
+            "member_name": member_name.strip(),
+            "birthday": mmdd,
+            "memo": memo.strip(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+        on_conflict="member_name",
+    ).execute()
+
+
+def delete_birthday(member_name: str) -> None:
+    supabase.table("member_birthdays").delete().eq("member_name", member_name).execute()
 
 
 def load_meetings() -> dict:
-    res = (
-        supabase.table("meetings")
-        .select("meeting_name, members, birthdays")
-        .order("meeting_name")
-        .execute()
-    )
+    res = supabase.table("meetings").select("meeting_name, members").order("meeting_name").execute()
     meetings_dict = {}
     for row in res.data or []:
-        meetings_dict[row["meeting_name"]] = {
-            "members": row.get("members") or "",
-            "birthdays": row.get("birthdays") or "",
-        }
+        meetings_dict[row["meeting_name"]] = row["members"]
     return meetings_dict
 
 
@@ -177,6 +221,44 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> pd.DataFrame
     return pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months)
 
 
+def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> None:
+    """접속 시 오늘 생일 및 다가오는 생일 알림 배너/토스트 표시"""
+    today = datetime.date.today()
+    today_list = []
+    upcoming_list = []
+
+    for item in all_birthdays:
+        diff = days_until_birthday(item["birthday"], today)
+        if diff is None:
+            continue
+        m, d = map(int, item["birthday"].split("-"))
+        label = f"{item['member_name']} ({m}월 {d}일)"
+        if item["memo"]:
+            label += f" - {item['memo']}"
+
+        if diff == 0:
+            today_list.append(label)
+        elif 1 <= diff <= alert_days:
+            upcoming_list.append((diff, label))
+
+    upcoming_list.sort(key=lambda x: x[0])
+
+    if not st.session_state.birthday_toast_shown:
+        if today_list:
+            st.toast(f"🎂 오늘 생일: {', '.join(today_list)}", icon="🎂")
+        elif upcoming_list:
+            soonest = upcoming_list[0]
+            st.toast(f"🎈 {soonest[0]}일 뒤 생일: {soonest[1]}", icon="🎈")
+        st.session_state.birthday_toast_shown = True
+
+    if today_list:
+        st.success(f"🎂 **오늘({today.month}월 {today.day}일) 생일 알림:** " + " | ".join(today_list))
+
+    if upcoming_list:
+        items_text = " | ".join(f"{lbl} (D-{diff})" for diff, lbl in upcoming_list)
+        st.info(f"🎈 **다가오는 생일({alert_days}일 이내):** {items_text}")
+
+
 st.sidebar.header("⚙️ 출석부 관리")
 
 # 1. 새 모임 만들기 (자동 저장)
@@ -185,6 +267,7 @@ new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder
 
 meetings_map = load_meetings()
 meeting_names = list(meetings_map.keys())
+all_birthdays = load_all_birthdays()
 
 if st.sidebar.button("모임 추가하기"):
     if not new_meeting_name:
@@ -193,15 +276,13 @@ if st.sidebar.button("모임 추가하기"):
         st.sidebar.warning("이미 존재하는 모임 이름입니다.")
     else:
         supabase.table("meetings").insert(
-            {
-                "meeting_name": new_meeting_name,
-                "members": "참가자1, 참가자2",
-                "birthdays": "",
-            }
+            {"meeting_name": new_meeting_name, "members": "참가자1, 참가자2"}
         ).execute()
         st.sidebar.success(f"'{new_meeting_name}' 모임이 생성되었습니다!")
         st.rerun()
 
+st.sidebar.markdown("---")
+alert_window = st.sidebar.slider("🎂 생일 미리 알림 기준(일)", min_value=1, max_value=30, value=7)
 st.sidebar.markdown("---")
 
 if meeting_names:
@@ -217,8 +298,7 @@ if meeting_names:
         elif new_name in meetings_map:
             st.sidebar.warning("이미 존재하는 모임 이름입니다.")
         else:
-            old_members = meetings_map[selected_meeting]["members"]
-            old_birthdays = meetings_map[selected_meeting]["birthdays"]
+            old_members = meetings_map[selected_meeting]
             old_records = (
                 supabase.table("attendance_records")
                 .select("record_date, member_name, status, note")
@@ -236,11 +316,7 @@ if meeting_names:
                 or []
             )
             supabase.table("meetings").insert(
-                {
-                    "meeting_name": new_name,
-                    "members": old_members,
-                    "birthdays": old_birthdays,
-                }
+                {"meeting_name": new_name, "members": old_members}
             ).execute()
             if old_records:
                 migrated = [
@@ -304,8 +380,7 @@ if meeting_names:
 
     # 4. 멤버 명단 수정 및 자동 저장
     st.sidebar.subheader(f"👥 [{selected_meeting}] 멤버 설정")
-    current_members_str = meetings_map[selected_meeting]["members"]
-    current_birthdays_str = meetings_map[selected_meeting]["birthdays"]
+    current_members_str = meetings_map[selected_meeting]
     names_input = st.sidebar.text_area(
         "참석자 명단 (쉼표로 구분)", value=current_members_str, key=f"members_{selected_meeting}"
     )
@@ -320,10 +395,11 @@ if meeting_names:
         st.rerun()
 
     member_list = [name.strip() for name in names_input.split(",") if name.strip()]
-    saved_bday_map = parse_birthdays_str(current_birthdays_str)
     df = load_attendance(selected_meeting)
 
     st.title(f"📊 {selected_meeting} 통합 출석부")
+    render_birthday_alerts(all_birthdays, alert_days=alert_window)
+
     tab1, tab2, tab3 = st.tabs(["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 월별 생일"])
 
     with tab1:
@@ -442,76 +518,79 @@ if meeting_names:
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
     with tab3:
-        st.subheader(f"🎂 '{selected_meeting}' 월별 생일 현황")
-        st.caption("멤버별 생일을 입력해 저장하면 1월~12월 월별로 묶어서 한눈에 확인할 수 있습니다.")
+        st.subheader("🎂 전체 인원 월별 생일 관리 (모임 무관)")
+        st.caption(
+            "모임과 관계없이 등록해 둔 모든 인원의 생일이 함께 관리되며, 앱 접속 시 오늘/다가오는 생일 알림으로 표시됩니다."
+        )
 
-        if not member_list:
-            st.info("먼저 왼쪽 사이드바에서 멤버 명단을 입력하고 저장해 주세요.")
-        else:
-            with st.form(key=f"birthday_form_{selected_meeting}"):
-                st.write("### ✏️ 멤버별 생일 입력 (예: 03-15 또는 3-15)")
-                bday_inputs = {}
-                cols = st.columns(3)
-                for idx, member in enumerate(member_list):
-                    with cols[idx % 3]:
-                        bday_inputs[member] = st.text_input(
-                            f"{member} 생일 (MM-DD)",
-                            value=saved_bday_map.get(member, ""),
-                            placeholder="예: 05-12",
-                            key=f"bday_{selected_meeting}_{member}",
-                        ).strip()
+        with st.form(key="global_birthday_form"):
+            st.write("### ➕ 생일 등록 / 수정")
+            c1, c2, c3 = st.columns([2, 2, 3])
+            with c1:
+                b_name = st.text_input("이름", placeholder="예: 홍길동")
+            with c2:
+                b_raw = st.text_input("생일 (월-일)", placeholder="예: 03-15 또는 3/15")
+            with c3:
+                b_memo = st.text_input("메모 (선택)", placeholder="예: 음력/양력 또는 소속")
 
-                bday_submitted = st.form_submit_button("🎂 생일 저장하기")
-                if bday_submitted:
-                    updated_map = {}
-                    invalid_names = []
-                    for member, raw_val in bday_inputs.items():
-                        if not raw_val:
-                            continue
-                        parsed = parse_birthdays_str(f"{member}:{raw_val}")
-                        if member in parsed:
-                            updated_map[member] = parsed[member]
-                        else:
-                            invalid_names.append(member)
-
-                    encoded_str = format_birthdays_str(updated_map)
-                    supabase.table("meetings").update(
-                        {
-                            "birthdays": encoded_str,
-                            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        }
-                    ).eq("meeting_name", selected_meeting).execute()
-
-                    if invalid_names:
-                        st.warning(
-                            f"일부 멤버({', '.join(invalid_names)})는 'MM-DD' 형식(예: 03-15)이 아니어서 제외하고 저장했습니다."
-                        )
-                    else:
-                        st.success("멤버별 생일이 저장되었습니다!")
+            b_save = st.form_submit_button("💾 생일 저장")
+            if b_save:
+                norm_bday = normalize_mmdd(b_raw)
+                if not b_name.strip():
+                    st.warning("이름을 입력해 주세요.")
+                elif not norm_bday:
+                    st.warning("생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
+                else:
+                    upsert_birthday(b_name, norm_bday, b_memo)
+                    st.success(f"'{b_name.strip()}'님의 생일({norm_bday})이 전체 생일 명단에 저장되었습니다!")
                     st.rerun()
 
+        st.markdown("---")
+        st.write("### 🗓️ 1월 ~ 12월 월별 생일자 모아보기")
+
+        monthly_groups = {m: [] for m in range(1, 13)}
+        for row in all_birthdays:
+            m_num, d_num = map(int, row["birthday"].split("-"))
+            monthly_groups[m_num].append((d_num, row["member_name"], row["memo"]))
+
+        month_cols = st.columns(4)
+        for m in range(1, 13):
+            with month_cols[(m - 1) % 4]:
+                with st.container(border=True):
+                    st.markdown(f"**{m}월**")
+                    entries = sorted(monthly_groups[m], key=lambda x: x[0])
+                    if entries:
+                        for d_num, name, memo in entries:
+                            suffix = f" ({memo})" if memo else ""
+                            st.write(f"• **{name}** — {m}월 {d_num}일{suffix}")
+                    else:
+                        st.caption("등록된 생일자 없음")
+
+        if all_birthdays:
             st.markdown("---")
-            st.write("### 🗓️ 월별 생일자 모아보기")
+            with st.expander("📋 등록된 전체 생일 목록 및 삭제"):
+                list_df = pd.DataFrame(
+                    [
+                        {
+                            "이름": r["member_name"],
+                            "생일(MM-DD)": r["birthday"],
+                            "메모": r["memo"],
+                        }
+                        for r in all_birthdays
+                    ]
+                )
+                st.dataframe(list_df, use_container_width=True, hide_index=True)
 
-            monthly_groups = {m: [] for m in range(1, 13)}
-            for member in member_list:
-                bday = saved_bday_map.get(member, "")
-                if bday and "-" in bday:
-                    m_num = int(bday.split("-")[0])
-                    d_num = int(bday.split("-")[1])
-                    monthly_groups[m_num].append((d_num, member, f"{m_num}월 {d_num}일"))
-
-            month_grid_cols = st.columns(4)
-            for m in range(1, 13):
-                with month_grid_cols[(m - 1) % 4]:
-                    with st.container(border=True):
-                        st.markdown(f"**{m}월**")
-                        entries = sorted(monthly_groups[m], key=lambda x: x[0])
-                        if entries:
-                            for _, name, label in entries:
-                                st.write(f"• {name} ({label})")
-                        else:
-                            st.caption("등록된 생일자 없음")
+                del_target = st.selectbox(
+                    "삭제할 인원 선택",
+                    [r["member_name"] for r in all_birthdays],
+                    key="del_bday_target",
+                )
+                if st.button("🗑️ 선택한 생일 삭제", key="btn_del_bday"):
+                    delete_birthday(del_target)
+                    st.success(f"'{del_target}'님의 생일 정보가 삭제되었습니다.")
+                    st.rerun()
 else:
     st.title("📊 통합 단체 출석부")
+    render_birthday_alerts(all_birthdays, alert_days=alert_window)
     st.info("👈 왼쪽 사이드바에서 **'새 모임 만들기'**를 통해 모임을 먼저 추가해 주세요!")
