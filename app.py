@@ -869,4 +869,4 @@ if meeting_names:
                             suffix = f" ({memo})" if memo else ""
                             st.write(f"• **{name}** — {m}월 {d_num}일{suffix}")
                     else:
-                        st.caption("등록된 생일자 없음
+                        st.caption("등록된 생일자 없음")
