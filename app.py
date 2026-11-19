@@ -115,8 +115,28 @@ def load_meetings() -> dict:
 
     meetings_dict = {}
     for row in res.data or []:
-        meetings_dict[row["meeting_name"]] = row["members"]
+        meetings_dict[row["meeting_name"]] = row["members"] or ""
     return meetings_dict
+
+
+def collect_known_members(meetings_map: dict, all_birthdays: list[dict], df: pd.DataFrame) -> list[str]:
+    """등록된 생일 명단, 모든 모임 명단, 출석 기록에 등장한 전체 인원 목록 수집"""
+    names: list[str] = []
+    for b in all_birthdays:
+        n = (b.get("member_name") or "").strip()
+        if n and n not in names:
+            names.append(n)
+    for m_str in meetings_map.values():
+        for part in (m_str or "").split(","):
+            n = part.strip()
+            if n and n not in names:
+                names.append(n)
+    if not df.empty and "이름" in df.columns:
+        for part in df["이름"].dropna().tolist():
+            n = str(part).strip()
+            if n and n not in names:
+                names.append(n)
+    return names
 
 
 def load_attendance(meeting_name: str) -> pd.DataFrame:
@@ -142,15 +162,17 @@ def load_attendance(meeting_name: str) -> pd.DataFrame:
     return df[["날짜", "이름", "출석상태", "비고"]]
 
 
-def load_photos(meeting_name: str, record_date: str) -> list:
-    res = (
+def load_photos(meeting_name: str, record_date: str | None = None) -> list:
+    query = (
         supabase.table("attendance_photos")
         .select("id, photo_url, storage_path, record_date")
         .eq("meeting_name", meeting_name)
-        .eq("record_date", record_date)
-        .order("id")
-        .execute()
     )
+    if record_date:
+        query = query.eq("record_date", record_date).order("id")
+    else:
+        query = query.order("record_date", desc=True).order("id")
+    res = query.execute()
     return res.data or []
 
 
@@ -191,7 +213,8 @@ def delete_photo_record(photo_row: dict) -> None:
     supabase.table("attendance_photos").delete().eq("id", photo_row["id"]).execute()
 
 
-def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> pd.DataFrame:
+def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """월별 출석 현황표(●/△/X)와 월별 출석률 추이 데이터프레임 반환"""
     months = [f"{m}월" for m in range(1, 13)]
     parsed_dates = pd.to_datetime(stat_df["날짜"], errors="coerce")
     work_df = stat_df.copy()
@@ -202,7 +225,8 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> pd.DataFrame
 
     all_names = list(dict.fromkeys(member_list + work_df["이름"].dropna().unique().tolist()))
     grid_rows = []
-    month_counts = {m: 0 for m in range(1, 13)}
+    month_present_counts = {m: 0 for m in range(1, 13)}
+    month_recorded_counts = {m: 0 for m in range(1, 13)}
 
     for idx, name in enumerate(all_names, start=1):
         row_data = {"NO.": idx, "이름": name}
@@ -218,16 +242,29 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> pd.DataFrame
                     key=lambda s: priority.get(s, 0),
                 )
                 row_data[col_label] = symbol_map.get(best_status, best_status)
+                month_recorded_counts[m] += 1
                 if best_status == "O":
-                    month_counts[m] += 1
+                    month_present_counts[m] += 1
         grid_rows.append(row_data)
 
     total_row = {"NO.": "", "이름": "계"}
+    trend_rows = []
     for m in range(1, 13):
-        total_row[f"{m}월"] = month_counts[m] if month_counts[m] > 0 else 0
-    grid_rows.append(total_row)
+        col_label = f"{m}월"
+        present_cnt = month_present_counts[m]
+        recorded_cnt = month_recorded_counts[m]
+        total_row[col_label] = present_cnt
+        rate = round((present_cnt / recorded_cnt) * 100, 1) if recorded_cnt > 0 else 0.0
+        trend_rows.append({"월": col_label, "출석률(%)": rate})
 
-    return pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months)
+    grid_rows.append(total_row)
+    grid_df = pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months)
+    trend_df = pd.DataFrame(trend_rows).set_index("월")
+    return grid_df, trend_df
+
+
+def to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8-sig")
 
 
 def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> None:
@@ -270,7 +307,7 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
 
 st.sidebar.header("⚙️ 출석부 관리")
 
-# 1. 새 모임 만들기 (자동 저장)
+# 1. 새 모임 만들기
 st.sidebar.subheader("➕ 새 모임 만들기")
 new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder="예: 31구역모임").strip()
 
@@ -357,25 +394,36 @@ if meeting_names:
             supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
             st.rerun()
 
-    # 3. 모임 삭제 (확인 단계 포함)
+    # 3. 모임 삭제 (영향 건수 안내 및 확인 단계 포함)
     if not st.session_state.confirm_delete:
         if st.sidebar.button("현재 모임 삭제하기"):
             st.session_state.confirm_delete = True
             st.rerun()
     else:
-        st.sidebar.error(f"⚠️ '{selected_meeting}'을(를) 정말 삭제하시겠습니까?")
+        target_records = (
+            supabase.table("attendance_records")
+            .select("id")
+            .eq("meeting_name", selected_meeting)
+            .execute()
+            .data
+            or []
+        )
+        target_photos = (
+            supabase.table("attendance_photos")
+            .select("id, storage_path")
+            .eq("meeting_name", selected_meeting)
+            .execute()
+            .data
+            or []
+        )
+        st.sidebar.error(
+            f"⚠️ '{selected_meeting}'을(를) 삭제하면 출석 기록 **{len(target_records)}건**과 "
+            f"사진 **{len(target_photos)}장**이 함께 삭제됩니다. 계속할까요?"
+        )
         col1, col2 = st.sidebar.columns(2)
         with col1:
             if st.sidebar.button("예, 삭제"):
-                photo_rows = (
-                    supabase.table("attendance_photos")
-                    .select("id, storage_path")
-                    .eq("meeting_name", selected_meeting)
-                    .execute()
-                    .data
-                    or []
-                )
-                for p in photo_rows:
+                for p in target_photos:
                     delete_photo_record(p)
                 supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
                 st.session_state.confirm_delete = False
@@ -387,12 +435,41 @@ if meeting_names:
 
     st.sidebar.markdown("---")
 
-    # 4. 멤버 명단 수정 및 자동 저장
+    # 4. 멤버 명단 수정 및 전체 인원 빠른 추가
     st.sidebar.subheader(f"👥 [{selected_meeting}] 멤버 설정")
     current_members_str = meetings_map[selected_meeting]
+    member_text_key = f"members_{selected_meeting}"
+    if member_text_key not in st.session_state:
+        st.session_state[member_text_key] = current_members_str
+
     names_input = st.sidebar.text_area(
-        "참석자 명단 (쉼표로 구분)", value=current_members_str, key=f"members_{selected_meeting}"
+        "참석자 명단 (쉼표로 구분)", key=member_text_key
     )
+    current_parsed_members = [name.strip() for name in names_input.split(",") if name.strip()]
+
+    df = load_attendance(selected_meeting)
+    known_members = collect_known_members(meetings_map, all_birthdays, df)
+    addable_members = [m for m in known_members if m not in current_parsed_members]
+
+    if addable_members:
+        selected_to_add = st.sidebar.multiselect(
+            "기존 등록 인원에서 빠른 추가",
+            options=addable_members,
+            key=f"quick_add_{selected_meeting}",
+        )
+        if st.sidebar.button("선택 인원 명단에 넣기", key=f"btn_quick_add_{selected_meeting}") and selected_to_add:
+            merged_list = current_parsed_members + selected_to_add
+            updated_str = ", ".join(merged_list)
+            st.session_state[member_text_key] = updated_str
+            supabase.table("meetings").update(
+                {
+                    "members": updated_str,
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                }
+            ).eq("meeting_name", selected_meeting).execute()
+            st.sidebar.success(f"{len(selected_to_add)}명을 추가하고 저장했습니다!")
+            st.rerun()
+
     if st.sidebar.button("명단 저장하기", key=f"save_members_{selected_meeting}"):
         supabase.table("meetings").update(
             {
@@ -403,8 +480,7 @@ if meeting_names:
         st.sidebar.success("멤버 명단이 저장되었습니다!")
         st.rerun()
 
-    member_list = [name.strip() for name in names_input.split(",") if name.strip()]
-    df = load_attendance(selected_meeting)
+    member_list = current_parsed_members
 
     st.title(f"📊 {selected_meeting} 통합 출석부")
     render_birthday_alerts(all_birthdays, alert_days=alert_window)
@@ -463,21 +539,52 @@ if meeting_names:
         else:
             st.info(f"{date_str}에 저장된 사진이 아직 없습니다. 위에서 사진을 선택 후 '선택한 사진 저장하기'를 눌러주세요.")
 
+        all_meeting_photos = load_photos(selected_meeting)
+        if all_meeting_photos:
+            with st.expander(f"🗂️ '{selected_meeting}' 날짜별 사진 갤러리 (총 {len(all_meeting_photos)}장)"):
+                gallery_cols = st.columns(3)
+                for idx, g_row in enumerate(all_meeting_photos):
+                    with gallery_cols[idx % 3]:
+                        st.image(
+                            g_row["photo_url"],
+                            caption=f"{g_row['record_date']} (#{idx+1})",
+                            use_container_width=True,
+                        )
+
         st.markdown("---")
         st.write("### 🙋‍♂️ 멤버별 출석 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
 
-        with st.form(key=f"form_{selected_meeting}"):
+        existing_day_df = df[df["날짜"].astype(str) == date_str] if not df.empty else pd.DataFrame()
+        has_existing = not existing_day_df.empty
+        existing_status_map = {}
+        existing_note = ""
+        if has_existing:
+            st.caption(f"✏️ **{date_str}**에 이미 저장된 출석 기록이 있어 기존 값을 불러왔습니다. 수정 후 저장하면 덮어씌워집니다.")
+            for _, r in existing_day_df.iterrows():
+                existing_status_map[str(r["이름"])] = r["출석상태"]
+            notes_non_empty = [str(n) for n in existing_day_df["비고"].dropna().tolist() if str(n).strip()]
+            if notes_non_empty:
+                existing_note = notes_non_empty[0]
+
+        status_options = ["O", "△", "X"]
+        with st.form(key=f"form_{selected_meeting}_{date_str}"):
             attendance_status = {}
             for member in member_list:
+                default_status = existing_status_map.get(member, "O")
+                default_idx = status_options.index(default_status) if default_status in status_options else 0
                 attendance_status[member] = st.radio(
                     f"{member}",
-                    ["O", "△", "X"],
-                    index=0,
+                    status_options,
+                    index=default_idx,
                     horizontal=True,
-                    key=f"radio_{selected_meeting}_{member}",
+                    key=f"radio_{selected_meeting}_{date_str}_{member}",
                 )
 
-            note = st.text_input("이번 모임 특이사항 (예: 뒷풀이 장소 등)", key=f"note_{selected_meeting}")
+            note = st.text_input(
+                "이번 모임 특이사항 (예: 뒷풀이 장소 등)",
+                value=existing_note,
+                key=f"note_{selected_meeting}_{date_str}",
+            )
             submitted = st.form_submit_button("출석 기록 자동 저장")
 
             if submitted:
@@ -506,25 +613,66 @@ if meeting_names:
         if df.empty:
             st.info("아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
         else:
-            score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
-            stat_df = df.copy()
-            stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
+            parsed_all_dates = pd.to_datetime(df["날짜"], errors="coerce")
+            available_years = sorted(
+                parsed_all_dates.dt.year.dropna().astype(int).unique().tolist(),
+                reverse=True,
+            )
+            year_options = ["전체 연도"] + [f"{y}년" for y in available_years]
+            selected_year_label = st.selectbox(
+                "조회 연도 필터",
+                year_options,
+                key=f"year_filter_{selected_meeting}",
+            )
 
-            st.write(f"### 📅 {selected_meeting} 월별 출석 현황")
-            monthly_df = build_monthly_grid(stat_df, member_list)
-            st.dataframe(monthly_df, use_container_width=True, hide_index=True)
+            if selected_year_label == "전체 연도":
+                filtered_df = df.copy()
+            else:
+                target_year = int(selected_year_label.replace("년", ""))
+                filtered_df = df[parsed_all_dates.dt.year == target_year].copy()
 
-            st.markdown("---")
+            if filtered_df.empty:
+                st.info(f"{selected_year_label}에 해당하는 출석 기록이 없습니다.")
+            else:
+                score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
+                stat_df = filtered_df.copy()
+                stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
 
-            summary_df = stat_df.groupby("이름", as_index=False)["출석점수"].sum()
-            summary_df.rename(columns={"출석점수": "환산 출석 점수"}, inplace=True)
+                st.write(f"### 📅 {selected_meeting} 월별 출석 현황 ({selected_year_label})")
+                monthly_df, trend_df = build_monthly_grid(stat_df, member_list)
+                st.dataframe(monthly_df, use_container_width=True, hide_index=True)
 
-            total_meetings = stat_df["날짜"].nunique()
-            summary_df["총 모임 수"] = total_meetings
-            summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
+                st.download_button(
+                    label="📥 월별 출석 현황 CSV 다운로드",
+                    data=to_csv_bytes(monthly_df),
+                    file_name=f"{selected_meeting}_월별출석현황_{selected_year_label}.csv",
+                    mime="text/csv",
+                    key=f"dl_monthly_{selected_meeting}_{selected_year_label}",
+                )
 
-            st.write("### 📋 멤버별 누적 출석 통계 (자동 합계)")
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                st.markdown("---")
+                st.write(f"### 📊 월별 출석률 추이 ({selected_year_label})")
+                st.bar_chart(trend_df, y="출석률(%)")
+
+                st.markdown("---")
+
+                summary_df = stat_df.groupby("이름", as_index=False)["출석점수"].sum()
+                summary_df.rename(columns={"출석점수": "환산 출석 점수"}, inplace=True)
+
+                total_meetings = stat_df["날짜"].nunique()
+                summary_df["총 모임 수"] = total_meetings
+                summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
+
+                st.write("### 📋 멤버별 누적 출석 통계 (자동 합계)")
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+                st.download_button(
+                    label="📥 멤버별 누적 통계 CSV 다운로드",
+                    data=to_csv_bytes(summary_df),
+                    file_name=f"{selected_meeting}_멤버별누적통계_{selected_year_label}.csv",
+                    mime="text/csv",
+                    key=f"dl_summary_{selected_meeting}_{selected_year_label}",
+                )
 
     with tab3:
         st.subheader("🎂 전체 인원 월별 생일 관리 (모임 무관)")
@@ -602,4 +750,4 @@ if meeting_names:
 else:
     st.title("📊 통합 단체 출석부")
     render_birthday_alerts(all_birthdays, alert_days=alert_window)
-    st.info("👈 왼쪽 사이드바에서 **'새 모임 만들기'**를 통해 모임을 먼저 추가해 주세요!")
+    st.info("👈 왼쪽 사이드바에서 **새 모임 만들기**를 통해 모임을 먼저 추가해 주세요!")
