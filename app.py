@@ -490,11 +490,57 @@ if meeting_names:
     with tab1:
         st.subheader(f"'{selected_meeting}' 모임 출석 입력")
 
+        date_input_key = f"date_{selected_meeting}"
+        if date_input_key not in st.session_state:
+            st.session_state[date_input_key] = datetime.date.today()
+
+        recorded_dates = (
+            sorted(df["날짜"].astype(str).unique().tolist(), reverse=True)
+            if not df.empty and "날짜" in df.columns
+            else []
+        )
+
         col1, col2 = st.columns(2)
         with col1:
             meeting_date = st.date_input(
-                "모임 날짜 선택", datetime.date.today(), key=f"date_{selected_meeting}"
+                "모임 날짜 선택", key=date_input_key
             )
+            if recorded_dates:
+                badges_html = " ".join(
+                    f"<span style='display:inline-block; background-color:#ffe5e5; color:#c62828; "
+                    f"border:1px solid #ef9a9a; border-radius:999px; padding:2px 9px; "
+                    f"margin:2px 4px 2px 0; font-size:0.82rem; font-weight:600;'>● {d}</span>"
+                    for d in recorded_dates[:15]
+                )
+                extra_note = (
+                    f" <span style='font-size:0.78rem; color:#888;'>(외 {len(recorded_dates) - 15}건)</span>"
+                    if len(recorded_dates) > 15
+                    else ""
+                )
+                st.markdown(
+                    f"<div style='margin-top:4px; margin-bottom:6px;'>"
+                    f"<span style='font-size:0.84rem; color:#c62828; font-weight:600;'>출석 기록 있는 날짜:</span><br>{badges_html}{extra_note}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                jump_col1, jump_col2 = st.columns([3, 2])
+                with jump_col1:
+                    picked_rec_date = st.selectbox(
+                        "기록된 날짜 바로 고르기",
+                        options=recorded_dates,
+                        key=f"jump_date_select_{selected_meeting}",
+                        label_visibility="collapsed",
+                    )
+                with jump_col2:
+                    if st.button("선택 기록일로 이동", key=f"jump_date_btn_{selected_meeting}"):
+                        try:
+                            st.session_state[date_input_key] = datetime.date.fromisoformat(picked_rec_date)
+                            st.rerun()
+                        except ValueError:
+                            st.warning("날짜 형식을 변환할 수 없습니다.")
+            else:
+                st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
+
         with col2:
             group_photos = st.file_uploader(
                 "모임 단체 사진 업로드 (최대 2장)",
