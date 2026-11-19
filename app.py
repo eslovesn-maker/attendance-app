@@ -1,13 +1,19 @@
 import datetime
+import io
+import uuid
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
+from PIL import Image
 from supabase import Client, create_client
 
 plt.rcParams["font.family"] = "sans-serif"
 plt.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="통합 단체 출석부", layout="wide")
+
+PHOTO_BUCKET = "attendance-photos"
 
 
 @st.cache_resource
@@ -54,6 +60,55 @@ def load_attendance(meeting_name: str) -> pd.DataFrame:
     return df[["날짜", "이름", "출석상태", "비고"]]
 
 
+def load_photos(meeting_name: str, record_date: str) -> list:
+    res = (
+        supabase.table("attendance_photos")
+        .select("id, photo_url, storage_path, record_date")
+        .eq("meeting_name", meeting_name)
+        .eq("record_date", record_date)
+        .order("id")
+        .execute()
+    )
+    return res.data or []
+
+
+def upload_and_save_photo(uploaded_file, meeting_name: str, record_date: str) -> None:
+    ext = uploaded_file.name.split(".")[-1].lower() if "." in uploaded_file.name else "png"
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+
+    content_type = uploaded_file.type or f"image/{ext}"
+    safe_meeting = str(uuid.uuid4())[:8]
+    storage_path = f"{safe_meeting}/{record_date}/{uuid.uuid4().hex}.{ext}"
+
+    file_bytes = uploaded_file.getvalue()
+    supabase.storage.from_(PHOTO_BUCKET).upload(
+        path=storage_path,
+        file=file_bytes,
+        file_options={"content-type": content_type, "upsert": "false"},
+    )
+
+    public_url = supabase.storage.from_(PHOTO_BUCKET).get_public_url(storage_path)
+    supabase.table("attendance_photos").insert(
+        {
+            "meeting_name": meeting_name,
+            "record_date": record_date,
+            "photo_url": public_url,
+            "storage_path": storage_path,
+        }
+    ).execute()
+
+
+def delete_photo_record(photo_row: dict) -> None:
+    storage_path = photo_row.get("storage_path") or ""
+    if storage_path:
+        try:
+            supabase.storage.from_(PHOTO_BUCKET).remove([storage_path])
+        except Exception:
+            pass
+    supabase.table("attendance_photos").delete().eq("id", photo_row["id"]).execute()
+
+
 st.sidebar.header("⚙️ 출석부 관리")
 
 # 1. 새 모임 만들기 (자동 저장)
@@ -80,7 +135,7 @@ st.sidebar.markdown("---")
 if meeting_names:
     selected_meeting = st.sidebar.selectbox("📂 관리할 모임 선택", meeting_names)
 
-    # 2. 모임 이름 변경 (출석 기록도 함께 새 이름으로 이전 후 기존 행 삭제)
+    # 2. 모임 이름 변경 (출석 기록 및 사진 기록도 함께 새 이름으로 이전 후 기존 행 삭제)
     new_name = st.sidebar.text_input("선택한 모임 새 이름 변경", value=selected_meeting).strip()
     if st.sidebar.button("이름 변경하기"):
         if not new_name:
@@ -94,6 +149,14 @@ if meeting_names:
             old_records = (
                 supabase.table("attendance_records")
                 .select("record_date, member_name, status, note")
+                .eq("meeting_name", selected_meeting)
+                .execute()
+                .data
+                or []
+            )
+            old_photos = (
+                supabase.table("attendance_photos")
+                .select("record_date, photo_url, storage_path")
                 .eq("meeting_name", selected_meeting)
                 .execute()
                 .data
@@ -116,6 +179,19 @@ if meeting_names:
                 supabase.table("attendance_records").upsert(
                     migrated, on_conflict="meeting_name,record_date,member_name"
                 ).execute()
+            if old_photos:
+                migrated_photos = [
+                    {
+                        "meeting_name": new_name,
+                        "record_date": p["record_date"],
+                        "photo_url": p["photo_url"],
+                        "storage_path": p.get("storage_path") or "",
+                    }
+                    for p in old_photos
+                ]
+                supabase.table("attendance_photos").insert(migrated_photos).execute()
+                supabase.table("attendance_photos").delete().eq("meeting_name", selected_meeting).execute()
+
             supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
             st.rerun()
 
@@ -129,6 +205,16 @@ if meeting_names:
         col1, col2 = st.sidebar.columns(2)
         with col1:
             if st.sidebar.button("예, 삭제"):
+                photo_rows = (
+                    supabase.table("attendance_photos")
+                    .select("id, storage_path")
+                    .eq("meeting_name", selected_meeting)
+                    .execute()
+                    .data
+                    or []
+                )
+                for p in photo_rows:
+                    delete_photo_record(p)
                 supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
                 st.session_state.confirm_delete = False
                 st.rerun()
@@ -147,7 +233,10 @@ if meeting_names:
     )
     if st.sidebar.button("명단 저장하기", key=f"save_members_{selected_meeting}"):
         supabase.table("meetings").update(
-            {"members": names_input, "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            {
+                "members": names_input,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
         ).eq("meeting_name", selected_meeting).execute()
         st.sidebar.success("멤버 명단이 저장되었습니다!")
         st.rerun()
@@ -169,17 +258,46 @@ if meeting_names:
         with col2:
             group_photos = st.file_uploader(
                 "모임 단체 사진 업로드 (최대 2장)",
-                type=["png", "jpg", "jpeg"],
+                type=["png", "jpg", "jpeg", "webp"],
                 accept_multiple_files=True,
-                key=f"photo_{selected_meeting}",
+                key=f"photo_{selected_meeting}_{meeting_date}",
             )
 
+        date_str = str(meeting_date)
+        saved_photos = load_photos(selected_meeting, date_str)
+
         if group_photos:
-            st.write("📷 **업로드된 모임 사진 미리보기**")
+            st.write("📷 **새로 선택한 사진 미리보기 및 DB 저장**")
+            selected_files = group_photos[:2]
+            if len(group_photos) > 2:
+                st.caption("최대 2장까지만 저장됩니다. 앞의 2장이 선택되었습니다.")
+            preview_cols = st.columns(len(selected_files))
+            for idx, photo in enumerate(selected_files):
+                with preview_cols[idx]:
+                    st.image(photo, caption=f"미리보기 {idx+1} ({date_str})", use_container_width=True)
+
+            if st.button("📷 선택한 사진 저장하기", key=f"save_photo_{selected_meeting}_{date_str}"):
+                for photo in selected_files:
+                    upload_and_save_photo(photo, selected_meeting, date_str)
+                st.success(f"{date_str} 모임 사진이 Storage 및 DB에 저장되었습니다!")
+                st.rerun()
+
+        st.markdown("---")
+        st.write(f"🖼️ **저장된 모임 사진 ({date_str})**")
+        if saved_photos:
             photo_cols = st.columns(2)
-            for idx, photo in enumerate(group_photos[:2]):
-                with photo_cols[idx]:
-                    st.image(photo, caption=f"사진 {idx+1} ({meeting_date})", use_container_width=True)
+            for idx, p_row in enumerate(saved_photos):
+                with photo_cols[idx % 2]:
+                    st.image(
+                        p_row["photo_url"],
+                        caption=f"저장된 사진 {idx+1} ({p_row['record_date']})",
+                        use_container_width=True,
+                    )
+                    if st.button("🗑️ 사진 삭제", key=f"del_photo_{p_row['id']}"):
+                        delete_photo_record(p_row)
+                        st.rerun()
+        else:
+            st.info(f"{date_str}에 저장된 사진이 아직 없습니다. 위에서 사진을 선택 후 '선택한 사진 저장하기'를 눌러주세요.")
 
         st.markdown("---")
         st.write("### 🙋‍♂️ 멤버별 출석 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
@@ -199,7 +317,6 @@ if meeting_names:
             submitted = st.form_submit_button("출석 기록 자동 저장")
 
             if submitted:
-                date_str = str(meeting_date)
                 supabase.table("attendance_records").delete().eq(
                     "meeting_name", selected_meeting
                 ).eq("record_date", date_str).execute()
