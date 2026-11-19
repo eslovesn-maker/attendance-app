@@ -499,53 +499,59 @@ if meeting_names:
             if not df.empty and "날짜" in df.columns
             else []
         )
-        jump_select_key = f"jump_date_select_{selected_meeting}"
 
-        def _jump_to_recorded_date() -> None:
-            picked = st.session_state.get(jump_select_key)
-            if picked:
-                try:
-                    st.session_state[date_input_key] = datetime.date.fromisoformat(str(picked))
-                except ValueError:
-                    pass
+        def _set_target_date(target_iso: str) -> None:
+            try:
+                st.session_state[date_input_key] = datetime.date.fromisoformat(target_iso)
+            except ValueError:
+                pass
+
+        # 빨간 날짜 버튼 스타일 적용
+        st.markdown(
+            """
+            <style>
+            div.stButton > button.red-date-btn {
+                background-color: #ffe5e5;
+                color: #c62828;
+                border: 1px solid #ef9a9a;
+                border-radius: 999px;
+                padding: 2px 10px;
+                font-size: 0.82rem;
+                font-weight: 600;
+                min-height: 1.9rem;
+            }
+            div.stButton > button.red-date-btn:hover {
+                background-color: #ffcdd2;
+                color: #8e0000;
+                border-color: #e57373;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
         col1, col2 = st.columns(2)
         with col1:
-            meeting_date = st.date_input(
-                "모임 날짜 선택", key=date_input_key
-            )
+            meeting_date = st.date_input("모임 날짜 선택", key=date_input_key)
+
             if recorded_dates:
-                badges_html = " ".join(
-                    f"<span style='display:inline-block; background-color:#ffe5e5; color:#c62828; "
-                    f"border:1px solid #ef9a9a; border-radius:999px; padding:2px 9px; "
-                    f"margin:2px 4px 2px 0; font-size:0.82rem; font-weight:600;'>● {d}</span>"
-                    for d in recorded_dates[:15]
-                )
-                extra_note = (
-                    f" <span style='font-size:0.78rem; color:#888;'>(외 {len(recorded_dates) - 15}건)</span>"
-                    if len(recorded_dates) > 15
-                    else ""
-                )
                 st.markdown(
-                    f"<div style='margin-top:4px; margin-bottom:6px;'>"
-                    f"<span style='font-size:0.84rem; color:#c62828; font-weight:600;'>출석 기록 있는 날짜:</span><br>{badges_html}{extra_note}"
-                    f"</div>",
+                    "<span style='font-size:0.84rem; color:#c62828; font-weight:600;'>"
+                    "출석 기록 있는 날짜 (클릭 시 이동):</span>",
                     unsafe_allow_html=True,
                 )
-                jump_col1, jump_col2 = st.columns([3, 2])
-                with jump_col1:
-                    st.selectbox(
-                        "기록된 날짜 바로 고르기",
-                        options=recorded_dates,
-                        key=jump_select_key,
-                        label_visibility="collapsed",
-                    )
-                with jump_col2:
-                    st.button(
-                        "선택 기록일로 이동",
-                        key=f"jump_date_btn_{selected_meeting}",
-                        on_click=_jump_to_recorded_date,
-                    )
+                shown_dates = recorded_dates[:12]
+                btn_cols = st.columns(4)
+                for idx, d_str in enumerate(shown_dates):
+                    with btn_cols[idx % 4]:
+                        st.button(
+                            f"● {d_str}",
+                            key=f"red_btn_{selected_meeting}_{d_str}",
+                            on_click=_set_target_date,
+                            args=(d_str,),
+                        )
+                if len(recorded_dates) > 12:
+                    st.caption(f"최근 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
             else:
                 st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
 
