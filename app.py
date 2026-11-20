@@ -9,6 +9,8 @@ st.set_page_config(page_title="통합 단체 출석부", page_icon="🌿", layou
 
 PHOTO_BUCKET = "attendance-photos"
 WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
+TAG_TESTIMONY = "[간증]"
+TAG_PRAYER = "[기도부탁]"
 
 
 @st.cache_resource
@@ -32,6 +34,29 @@ def format_date_with_weekday(date_str: str) -> str:
         return f"{dt.isoformat()}({WEEKDAY_KO[dt.weekday()]})"
     except ValueError:
         return str(date_str)
+
+
+def parse_note_and_flags(raw_note: str | None) -> tuple[str, bool, bool]:
+    """DB의 note 문자열에서 메모 본문과 간증/기도부탁 체크 여부를 분리"""
+    text = str(raw_note or "")
+    has_testimony = TAG_TESTIMONY in text
+    has_prayer = TAG_PRAYER in text
+    clean_text = text.replace(TAG_TESTIMONY, "").replace(TAG_PRAYER, "").strip()
+    return clean_text, has_testimony, has_prayer
+
+
+def build_note_with_flags(clean_note: str, has_testimony: bool, has_prayer: bool) -> str:
+    """메모 본문과 간증/기도부탁 체크 여부를 note 문자열로 결합"""
+    tags = []
+    if has_testimony:
+        tags.append(TAG_TESTIMONY)
+    if has_prayer:
+        tags.append(TAG_PRAYER)
+    prefix = " ".join(tags)
+    body = clean_note.strip()
+    if prefix and body:
+        return f"{prefix} {body}"
+    return prefix or body
 
 
 def apply_warm_theme() -> None:
@@ -688,7 +713,7 @@ if meeting_names:
                         )
 
         st.markdown("---")
-        st.write("### 🌷 멤버별 출석 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
+        st.write("### 🌷 멤버별 출석 · 간증 · 기도부탁 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
 
         if not member_list:
             st.warning("왼쪽 사이드바의 **참석자 명단**에 멤버 이름을 쉼표로 구분해 입력하고 **💾 명단 저장하기**를 눌러주세요.")
@@ -696,28 +721,54 @@ if meeting_names:
             existing_day_df = df[df["날짜"].astype(str) == date_str] if not df.empty else pd.DataFrame()
             has_existing = not existing_day_df.empty
             existing_status_map = {}
+            existing_testimony_map = {}
+            existing_prayer_map = {}
             existing_note = ""
+
             if has_existing:
-                st.caption(f"✏️ **{date_with_day}**에 이미 저장된 출석 기록이 있어 기존 값을 불러왔습니다. 수정 후 저장하면 덮어씌워집니다.")
+                st.caption(f"✏️ **{date_with_day}**에 이미 저장된 기록이 있어 기존 값을 불러왔습니다. 수정 후 저장하면 덮어씌워집니다.")
                 for _, r in existing_day_df.iterrows():
-                    existing_status_map[str(r["이름"])] = r["출석상태"]
-                notes_non_empty = [str(n) for n in existing_day_df["비고"].dropna().tolist() if str(n).strip()]
-                if notes_non_empty:
-                    existing_note = notes_non_empty[0]
+                    m_name = str(r["이름"])
+                    existing_status_map[m_name] = r["출석상태"]
+                    clean_memo, has_t, has_p = parse_note_and_flags(r["비고"])
+                    existing_testimony_map[m_name] = has_t
+                    existing_prayer_map[m_name] = has_p
+                    if clean_memo and not existing_note:
+                        existing_note = clean_memo
 
             status_options = ["O", "△", "X"]
             with st.form(key=f"form_{selected_meeting}_{date_str}"):
                 attendance_status = {}
+                testimony_checked = {}
+                prayer_checked = {}
+
                 for member in member_list:
                     default_status = existing_status_map.get(member, "O")
                     default_idx = status_options.index(default_status) if default_status in status_options else 0
-                    attendance_status[member] = st.radio(
-                        f"🍃 {member}",
-                        status_options,
-                        index=default_idx,
-                        horizontal=True,
-                        key=f"radio_{selected_meeting}_{date_str}_{member}",
-                    )
+
+                    m_col1, m_col2, m_col3 = st.columns([3, 1.3, 1.5])
+                    with m_col1:
+                        attendance_status[member] = st.radio(
+                            f"🍃 {member}",
+                            status_options,
+                            index=default_idx,
+                            horizontal=True,
+                            key=f"radio_{selected_meeting}_{date_str}_{member}",
+                        )
+                    with m_col2:
+                        st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
+                        testimony_checked[member] = st.checkbox(
+                            "🙏 간증",
+                            value=existing_testimony_map.get(member, False),
+                            key=f"testimony_{selected_meeting}_{date_str}_{member}",
+                        )
+                    with m_col3:
+                        st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
+                        prayer_checked[member] = st.checkbox(
+                            "🕊️ 기도부탁",
+                            value=existing_prayer_map.get(member, False),
+                            key=f"prayer_{selected_meeting}_{date_str}_{member}",
+                        )
 
                 note = st.text_input(
                     "☕ 이번 모임 특이사항 (예: 뒷풀이 장소 등)",
@@ -737,13 +788,17 @@ if meeting_names:
                             "record_date": date_str,
                             "member_name": member,
                             "status": attendance_status[member],
-                            "note": note,
+                            "note": build_note_with_flags(
+                                note,
+                                testimony_checked[member],
+                                prayer_checked[member],
+                            ),
                         }
                         for member in member_list
                     ]
                     supabase.table("attendance_records").insert(payload).execute()
 
-                    st.success(f"'{selected_meeting}'의 {date_with_day} 출석 기록이 DB에 자동 저장되었습니다!")
+                    st.success(f"'{selected_meeting}'의 {date_with_day} 출석 · 간증 · 기도부탁 기록이 DB에 자동 저장되었습니다!")
                     st.rerun()
 
     with tab2:
@@ -775,6 +830,8 @@ if meeting_names:
                 score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
                 stat_df = filtered_df.copy()
                 stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
+                stat_df["간증여부"] = stat_df["비고"].fillna("").astype(str).str.contains(r"\[간증\]").astype(int)
+                stat_df["기도부탁여부"] = stat_df["비고"].fillna("").astype(str).str.contains(r"\[기도부탁\]").astype(int)
 
                 st.write(f"### 📅 {selected_meeting} 월별 출석 현황 ({selected_year_label})")
                 monthly_df, trend_df = build_monthly_grid(stat_df, member_list)
@@ -794,14 +851,22 @@ if meeting_names:
 
                 st.markdown("---")
 
-                summary_df = stat_df.groupby("이름", as_index=False)["출석점수"].sum()
-                summary_df.rename(columns={"출석점수": "환산 출석 점수"}, inplace=True)
+                summary_df = stat_df.groupby("이름", as_index=False).agg(
+                    **{
+                        "환산 출석 점수": ("출석점수", "sum"),
+                        "간증 횟수": ("간증여부", "sum"),
+                        "기도부탁 횟수": ("기도부탁여부", "sum"),
+                    }
+                )
 
                 total_meetings = stat_df["날짜"].nunique()
                 summary_df["총 모임 수"] = total_meetings
                 summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
+                summary_df = summary_df[
+                    ["이름", "환산 출석 점수", "총 모임 수", "출석률(%)", "간증 횟수", "기도부탁 횟수"]
+                ]
 
-                st.write("### 📋 멤버별 누적 출석 통계 (자동 합계)")
+                st.write("### 📋 멤버별 누적 출석 · 간증 · 기도부탁 통계")
                 st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
                 st.download_button(
