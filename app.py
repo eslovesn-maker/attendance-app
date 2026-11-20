@@ -479,3 +479,304 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
             today_list.append(label)
         elif 1 <= diff <= alert_days:
             upcoming_list.append((diff, label))
+
+    upcoming_list.sort(key=lambda x: x[0])
+
+    if not st.session_state.birthday_toast_shown:
+        if today_list:
+            st.toast(f"🎂 오늘 생일: {', '.join(today_list)}", icon="🎂")
+        elif upcoming_list:
+            soonest = upcoming_list[0]
+            st.toast(f"🎈 {soonest[0]}일 뒤 생일: {soonest[1]}", icon="🎈")
+        st.session_state.birthday_toast_shown = True
+
+    if today_list:
+        st.success(f"🎂 **오늘({today.month}월 {today.day}일) 생일 알림:** " + " | ".join(today_list))
+
+    if upcoming_list:
+        items_text = " | ".join(f"{lbl} (D-{diff})" for diff, lbl in upcoming_list)
+        st.info(f"🎈 **다가오는 생일({alert_days}일 이내):** {items_text}")
+
+
+st.sidebar.header("🌿 출석부 관리")
+
+st.sidebar.subheader("✨ 새 모임 만들기")
+new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder="예: 31구역모임").strip()
+
+meetings_map = load_meetings()
+meeting_names = list(meetings_map.keys())
+all_birthdays = load_all_birthdays()
+
+if st.sidebar.button("🌱 모임 추가하기"):
+    if not new_meeting_name:
+        st.sidebar.warning("모임 이름을 입력해 주세요.")
+    elif new_meeting_name in meetings_map:
+        st.sidebar.warning("이미 존재하는 모임 이름입니다.")
+    else:
+        supabase.table("meetings").insert(
+            {"meeting_name": new_meeting_name, "members": "참가자1, 참가자2"}
+        ).execute()
+        st.sidebar.success(f"'{new_meeting_name}' 모임이 생성되었습니다!")
+        st.rerun()
+
+st.sidebar.markdown("---")
+alert_window = st.sidebar.slider("🎂 생일 미리 알림 기준(일)", min_value=1, max_value=30, value=7)
+st.sidebar.markdown("---")
+
+if meeting_names:
+    selected_meeting = st.sidebar.selectbox("🏡 관리할 모임 선택", meeting_names)
+
+    new_name = st.sidebar.text_input("선택한 모임 새 이름 변경", value=selected_meeting).strip()
+    if st.sidebar.button("✏️ 이름 변경하기"):
+        if not new_name:
+            st.sidebar.warning("새 이름을 입력해 주세요.")
+        elif new_name == selected_meeting:
+            st.sidebar.info("변경할 이름이 현재 이름과 같습니다.")
+        elif new_name in meetings_map:
+            st.sidebar.warning("이미 존재하는 모임 이름입니다.")
+        else:
+            old_members = meetings_map[selected_meeting]
+            old_records = (
+                supabase.table("attendance_records")
+                .select("record_date, member_name, status, note")
+                .eq("meeting_name", selected_meeting)
+                .execute()
+                .data
+                or []
+            )
+            old_photos = (
+                supabase.table("attendance_photos")
+                .select("record_date, photo_url, storage_path")
+                .eq("meeting_name", selected_meeting)
+                .execute()
+                .data
+                or []
+            )
+            supabase.table("meetings").insert(
+                {"meeting_name": new_name, "members": old_members}
+            ).execute()
+            if old_records:
+                migrated = [
+                    {
+                        "meeting_name": new_name,
+                        "record_date": r["record_date"],
+                        "member_name": r["member_name"],
+                        "status": r["status"],
+                        "note": r["note"],
+                    }
+                    for r in old_records
+                ]
+                supabase.table("attendance_records").upsert(
+                    migrated, on_conflict="meeting_name,record_date,member_name"
+                ).execute()
+            if old_photos:
+                migrated_photos = [
+                    {
+                        "meeting_name": new_name,
+                        "record_date": p["record_date"],
+                        "photo_url": p["photo_url"],
+                        "storage_path": p.get("storage_path") or "",
+                    }
+                    for p in old_photos
+                ]
+                supabase.table("attendance_photos").insert(migrated_photos).execute()
+                supabase.table("attendance_photos").delete().eq("meeting_name", selected_meeting).execute()
+
+            supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
+            st.rerun()
+
+    if not st.session_state.confirm_delete:
+        if st.sidebar.button("🧺 현재 모임 삭제하기"):
+            st.session_state.confirm_delete = True
+            st.rerun()
+    else:
+        target_records = (
+            supabase.table("attendance_records")
+            .select("id")
+            .eq("meeting_name", selected_meeting)
+            .execute()
+            .data
+            or []
+        )
+        target_photos = (
+            supabase.table("attendance_photos")
+            .select("id, storage_path")
+            .eq("meeting_name", selected_meeting)
+            .execute()
+            .data
+            or []
+        )
+        st.sidebar.error(
+            f"☕ '{selected_meeting}'을(를) 삭제하면 출석 기록 **{len(target_records)}건**과 "
+            f"사진 **{len(target_photos)}장**이 함께 삭제됩니다. 계속할까요?"
+        )
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.sidebar.button("✅ 예, 삭제"):
+                for p in target_photos:
+                    delete_photo_record(p)
+                supabase.table("meetings").delete().eq("meeting_name", selected_meeting).execute()
+                st.session_state.confirm_delete = False
+                st.rerun()
+        with col2:
+            if st.sidebar.button("🕊️ 아니오"):
+                st.session_state.confirm_delete = False
+                st.rerun()
+
+    st.sidebar.markdown("---")
+
+    st.sidebar.subheader(f"🤝 [{selected_meeting}] 멤버 설정")
+    current_members_str = meetings_map[selected_meeting]
+    member_text_key = f"members_{selected_meeting}"
+    if member_text_key not in st.session_state:
+        st.session_state[member_text_key] = current_members_str
+
+    names_input = st.sidebar.text_area("참석자 명단 (쉼표로 구분)", key=member_text_key)
+    current_parsed_members = [name.strip() for name in names_input.split(",") if name.strip()]
+
+    df = load_attendance(selected_meeting)
+    known_members = collect_known_members(meetings_map, all_birthdays, df)
+    addable_members = [m for m in known_members if m not in current_parsed_members]
+
+    if addable_members:
+        selected_to_add = st.sidebar.multiselect(
+            "기존 등록 인원에서 빠른 추가",
+            options=addable_members,
+            key=f"quick_add_{selected_meeting}",
+        )
+        if st.sidebar.button("🌼 선택 인원 명단에 넣기", key=f"btn_quick_add_{selected_meeting}") and selected_to_add:
+            merged_list = current_parsed_members + selected_to_add
+            updated_str = ", ".join(merged_list)
+            st.session_state[member_text_key] = updated_str
+            supabase.table("meetings").update(
+                {
+                    "members": updated_str,
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                }
+            ).eq("meeting_name", selected_meeting).execute()
+            st.sidebar.success(f"{len(selected_to_add)}명을 추가하고 저장했습니다!")
+            st.rerun()
+
+    if st.sidebar.button("💾 명단 저장하기", key=f"save_members_{selected_meeting}"):
+        supabase.table("meetings").update(
+            {
+                "members": names_input,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+        ).eq("meeting_name", selected_meeting).execute()
+        st.sidebar.success("멤버 명단이 저장되었습니다!")
+        st.rerun()
+
+    member_list = current_parsed_members
+
+    st.title(f"🌻 {selected_meeting} 통합 출석부")
+    render_birthday_alerts(all_birthdays, alert_days=alert_window)
+
+    tab1, tab2, tab3 = st.tabs(["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 월별 생일"])
+
+    with tab1:
+        st.subheader(f"☀️ '{selected_meeting}' 모임 출석 입력")
+
+        date_input_key = f"date_{selected_meeting}"
+        if date_input_key not in st.session_state:
+            st.session_state[date_input_key] = datetime.date.today()
+
+        recorded_dates = (
+            sorted(df["날짜"].astype(str).unique().tolist(), reverse=False)
+            if not df.empty and "날짜" in df.columns
+            else []
+        )
+
+        def _set_target_date(target_iso: str) -> None:
+            try:
+                st.session_state[date_input_key] = datetime.date.fromisoformat(target_iso)
+            except ValueError:
+                pass
+
+        col1, col2 = st.columns(2)
+        with col1:
+            meeting_date = st.date_input("📅 모임 날짜 선택", key=date_input_key)
+
+            if recorded_dates:
+                st.markdown(
+                    "<span style='font-size:0.84rem; color:#B83227; font-weight:600;'>"
+                    "📌 출석 기록 있는 날짜</span>",
+                    unsafe_allow_html=True,
+                )
+                shown_dates = recorded_dates[:12]
+                date_cols = st.columns(len(shown_dates))
+                for idx, d_str in enumerate(shown_dates):
+                    with date_cols[idx]:
+                        st.button(
+                            f"● {format_date_with_weekday(d_str)}",
+                            key=f"red_btn_{selected_meeting}_{d_str}",
+                            on_click=_set_target_date,
+                            args=(d_str,),
+                        )
+                if len(recorded_dates) > 12:
+                    st.caption(f"앞 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
+            else:
+                st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
+
+        with col2:
+            group_photos = st.file_uploader(
+                "📸 모임 단체 사진 업로드 (최대 3장)",
+                type=["png", "jpg", "jpeg", "webp"],
+                accept_multiple_files=True,
+                key=f"photo_{selected_meeting}_{meeting_date}",
+            )
+
+        date_str = str(meeting_date)
+        date_with_day = format_date_with_weekday(date_str)
+        saved_photos = load_photos(selected_meeting, date_str)
+
+        if group_photos:
+            st.write("📷 **새로 선택한 사진 미리보기 및 DB 저장**")
+            selected_files = group_photos[:3]
+            if len(group_photos) > 3:
+                st.caption("최대 3장까지만 저장됩니다. 앞의 3장이 선택되었습니다.")
+            preview_cols = st.columns(len(selected_files))
+            for idx, photo in enumerate(selected_files):
+                with preview_cols[idx]:
+                    st.image(photo, caption=f"미리보기 {idx+1} ({date_with_day})", use_container_width=True)
+
+            if st.button("📷 선택한 사진 저장하기", key=f"save_photo_{selected_meeting}_{date_str}"):
+                for photo in selected_files:
+                    upload_and_save_photo(photo, selected_meeting, date_str)
+                st.success(f"{date_with_day} 모임 사진이 Storage 및 DB에 저장되었습니다!")
+                st.rerun()
+
+        st.markdown("---")
+        st.write(f"🖼️ **저장된 모임 사진 ({date_with_day})**")
+        if saved_photos:
+            photo_cols = st.columns(3)
+            for idx, p_row in enumerate(saved_photos):
+                with photo_cols[idx % 3]:
+                    st.image(
+                        p_row["photo_url"],
+                        caption=f"저장된 사진 {idx+1} ({format_date_with_weekday(p_row['record_date'])})",
+                        use_container_width=True,
+                    )
+                    if st.button("🗑️ 사진 삭제", key=f"del_photo_{p_row['id']}"):
+                        delete_photo_record(p_row)
+                        st.rerun()
+        else:
+            st.info(f"🌷 {date_with_day}에 저장된 사진이 아직 없습니다. 위에서 사진을 선택 후 '선택한 사진 저장하기'를 눌러주세요.")
+
+        all_meeting_photos = load_photos(selected_meeting)
+        if all_meeting_photos:
+            with st.expander(f"🗂️ '{selected_meeting}' 날짜별 사진 갤러리 (총 {len(all_meeting_photos)}장)"):
+                gallery_cols = st.columns(3)
+                for idx, g_row in enumerate(all_meeting_photos):
+                    with gallery_cols[idx % 3]:
+                        st.image(
+                            g_row["photo_url"],
+                            caption=f"{format_date_with_weekday(g_row['record_date'])} (#{idx+1})",
+                            use_container_width=True,
+                        )
+
+        st.markdown("---")
+        st.write("### 🌷 멤버별 출석 · 간증 · 기도부탁 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
+
+        if not member_list:
+            st.warning("왼쪽 사이드바의 **참석자 명단**
