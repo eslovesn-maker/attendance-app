@@ -897,4 +897,4 @@ if meeting_names:
                 parsed_notes = stat_df["비고"].apply(parse_note_and_flags)
                 stat_df["메모본문"] = [x[0] for x in parsed_notes]
                 stat_df["간증여부"] = [1 if x[1] else 0 for x in parsed_notes]
-                stat_df["기도부탁여부"] = [1 if x[2] else 0
+               stat_df["기도부탁여부"] = [1 if x[2] else 0 for x in parsed_notes]
