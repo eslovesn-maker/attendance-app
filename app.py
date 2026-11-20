@@ -11,6 +11,8 @@ PHOTO_BUCKET = "attendance-photos"
 WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 TAG_TESTIMONY = "[간증]"
 TAG_PRAYER = "[기도부탁]"
+EMOJI_TESTIMONY = "💬"
+EMOJI_PRAYER = "🙏"
 
 
 @st.cache_resource
@@ -37,7 +39,6 @@ def format_date_with_weekday(date_str: str) -> str:
 
 
 def parse_note_and_flags(raw_note: str | None) -> tuple[str, bool, bool]:
-    """DB의 note 문자열에서 메모 본문과 간증/기도부탁 체크 여부를 분리"""
     text = str(raw_note or "")
     has_testimony = TAG_TESTIMONY in text
     has_prayer = TAG_PRAYER in text
@@ -46,7 +47,6 @@ def parse_note_and_flags(raw_note: str | None) -> tuple[str, bool, bool]:
 
 
 def build_note_with_flags(clean_note: str, has_testimony: bool, has_prayer: bool) -> str:
-    """메모 본문과 간증/기도부탁 체크 여부를 note 문자열로 결합"""
     tags = []
     if has_testimony:
         tags.append(TAG_TESTIMONY)
@@ -390,6 +390,69 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.Dat
 
     grid_rows.append(total_row)
     grid_df = pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months)
+    trend_df = pd.DataFrame(trend_rows).set_index("월")
+    return grid_df, trend_df
+
+
+def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
+    months = [f"{m}월" for m in range(1, 13)]
+    parsed_dates = pd.to_datetime(stat_df["날짜"], errors="coerce")
+    work_df = stat_df.copy()
+    work_df["월"] = parsed_dates.dt.month
+
+    all_names = list(dict.fromkeys(member_list + work_df["이름"].dropna().unique().tolist()))
+    grid_rows = []
+    month_t_totals = {m: 0 for m in range(1, 13)}
+    month_p_totals = {m: 0 for m in range(1, 13)}
+
+    for idx, name in enumerate(all_names, start=1):
+        row_data = {"NO.": idx, "이름": name}
+        t_sum = 0
+        p_sum = 0
+        person_df = work_df[work_df["이름"] == name]
+        for m in range(1, 13):
+            col_label = f"{m}월"
+            m_sub = person_df[person_df["월"] == m]
+            t_cnt = int(m_sub["간증여부"].sum()) if not m_sub.empty else 0
+            p_cnt = int(m_sub["기도부탁여부"].sum()) if not m_sub.empty else 0
+            t_sum += t_cnt
+            p_sum += p_cnt
+            month_t_totals[m] += t_cnt
+            month_p_totals[m] += p_cnt
+
+            badges = []
+            if t_cnt > 0:
+                badges.append(f"{EMOJI_TESTIMONY}{t_cnt}" if t_cnt > 1 else EMOJI_TESTIMONY)
+            if p_cnt > 0:
+                badges.append(f"{EMOJI_PRAYER}{p_cnt}" if p_cnt > 1 else EMOJI_PRAYER)
+            row_data[col_label] = " ".join(badges)
+
+        row_data["간증 계"] = t_sum
+        row_data["기도부탁 계"] = p_sum
+        grid_rows.append(row_data)
+
+    total_row = {"NO.": "", "이름": "계"}
+    trend_rows = []
+    for m in range(1, 13):
+        col_label = f"{m}월"
+        total_row[col_label] = (
+            f"{EMOJI_TESTIMONY}{month_t_totals[m]} {EMOJI_PRAYER}{month_p_totals[m]}"
+            if (month_t_totals[m] or month_p_totals[m])
+            else ""
+        )
+        trend_rows.append(
+            {
+                "월": col_label,
+                "간증": month_t_totals[m],
+                "기도부탁": month_p_totals[m],
+            }
+        )
+
+    total_row["간증 계"] = sum(month_t_totals.values())
+    total_row["기도부탁 계"] = sum(month_p_totals.values())
+    grid_rows.append(total_row)
+
+    grid_df = pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months + ["간증 계", "기도부탁 계"])
     trend_df = pd.DataFrame(trend_rows).set_index("월")
     return grid_df, trend_df
 
@@ -758,14 +821,14 @@ if meeting_names:
                     with m_col2:
                         st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
                         testimony_checked[member] = st.checkbox(
-                            "🙏 간증",
+                            f"{EMOJI_TESTIMONY} 간증",
                             value=existing_testimony_map.get(member, False),
                             key=f"testimony_{selected_meeting}_{date_str}_{member}",
                         )
                     with m_col3:
                         st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
                         prayer_checked[member] = st.checkbox(
-                            "🕊️ 기도부탁",
+                            f"{EMOJI_PRAYER} 기도부탁",
                             value=existing_prayer_map.get(member, False),
                             key=f"prayer_{selected_meeting}_{date_str}_{member}",
                         )
@@ -802,7 +865,7 @@ if meeting_names:
                     st.rerun()
 
     with tab2:
-        st.subheader(f"📈 '{selected_meeting}' 연간 출석 현황")
+        st.subheader(f"📈 '{selected_meeting}' 연간 출석 · 간증 · 기도부탁 현황")
         if df.empty:
             st.info("🌱 아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
         else:
@@ -830,9 +893,20 @@ if meeting_names:
                 score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
                 stat_df = filtered_df.copy()
                 stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
-                stat_df["간증여부"] = stat_df["비고"].fillna("").astype(str).str.contains(r"\[간증\]").astype(int)
-                stat_df["기도부탁여부"] = stat_df["비고"].fillna("").astype(str).str.contains(r"\[기도부탁\]").astype(int)
 
+                parsed_notes = stat_df["비고"].apply(parse_note_and_flags)
+                stat_df["메모본문"] = [x[0] for x in parsed_notes]
+                stat_df["간증여부"] = [1 if x[1] else 0 for x in parsed_notes]
+                stat_df["기도부탁여부"] = [1 if x[2] else 0 for x in parsed_notes]
+
+                total_testimonies = int(stat_df["간증여부"].sum())
+                total_prayers = int(stat_df["기도부탁여부"].sum())
+                m1, m2, m3 = st.columns(3)
+                m1.metric("🗓️ 총 모임 횟수", f"{stat_df['날짜'].nunique()}회")
+                m2.metric(f"{EMOJI_TESTIMONY} 누적 간증", f"{total_testimonies}건")
+                m3.metric(f"{EMOJI_PRAYER} 누적 기도부탁", f"{total_prayers}건")
+
+                st.markdown("---")
                 st.write(f"### 📅 {selected_meeting} 월별 출석 현황 ({selected_year_label})")
                 monthly_df, trend_df = build_monthly_grid(stat_df, member_list)
                 st.dataframe(monthly_df, use_container_width=True, hide_index=True)
@@ -850,7 +924,43 @@ if meeting_names:
                 st.bar_chart(trend_df, y="출석률(%)", color="#D96B43")
 
                 st.markdown("---")
+                st.write(f"### {EMOJI_TESTIMONY}{EMOJI_PRAYER} 월별 간증 · 기도부탁 현황 및 추이 ({selected_year_label})")
+                st.caption(f"표시 기호: {EMOJI_TESTIMONY} 간증, {EMOJI_PRAYER} 기도부탁 (같은 달에 여러 건이 있으면 숫자가 함께 표시됩니다)")
+                tp_grid_df, tp_trend_df = build_monthly_tp_overview(stat_df, member_list)
+                st.dataframe(tp_grid_df, use_container_width=True, hide_index=True)
+                st.bar_chart(tp_trend_df, y=["간증", "기도부탁"], color=["#D96B43", "#5B8FB9"])
 
+                st.markdown("---")
+                st.write(f"### 📖 날짜별 · 멤버별 간증 및 기도부탁 상세 내역 ({selected_year_label})")
+                only_tp = st.checkbox(
+                    "간증 또는 기도부탁이 체크된 항목만 모아보기",
+                    value=True,
+                    key=f"only_tp_{selected_meeting}_{selected_year_label}",
+                )
+                detail_src = (
+                    stat_df[(stat_df["간증여부"] == 1) | (stat_df["기도부탁여부"] == 1)]
+                    if only_tp
+                    else stat_df
+                )
+                if detail_src.empty:
+                    st.info("선택한 조건에 해당하는 간증/기도부탁 기록이 아직 없습니다.")
+                else:
+                    detail_rows = []
+                    for _, r in detail_src.sort_values(["날짜", "이름"]).iterrows():
+                        detail_rows.append(
+                            {
+                                "날짜": format_date_with_weekday(str(r["날짜"])),
+                                "이름": r["이름"],
+                                "출석": r["출석상태"],
+                                "간증": f"{EMOJI_TESTIMONY} 간증" if r["간증여부"] else "",
+                                "기도부탁": f"{EMOJI_PRAYER} 기도부탁" if r["기도부탁여부"] else "",
+                                "모임 특이사항": r["메모본문"],
+                            }
+                        )
+                    detail_df = pd.DataFrame(detail_rows)
+                    st.dataframe(detail_df, use_container_width=True, hide_index=True)
+
+                st.markdown("---")
                 summary_df = stat_df.groupby("이름", as_index=False).agg(
                     **{
                         "환산 출석 점수": ("출석점수", "sum"),
