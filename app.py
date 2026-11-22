@@ -163,28 +163,37 @@ def apply_warm_theme() -> None:
             white-space: nowrap !important;
         }
 
-        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 가로 행 공통 스타일 */
+        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 클릭 영역을 막지 않고 간격만 한 칸 정도로 유지 */
         div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
-            justify-content: flex-start !important;
-            gap: 14px !important;
-            padding: 8px 4px !important;
+            gap: 8px !important;
+            padding: 6px 2px !important;
             border-bottom: 1px dashed #EFE5D8 !important;
-            width: 100% !important;
         }
         div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: auto !important;
-            flex: 0 0 auto !important;
-            min-width: unset !important;
-            padding: 0 !important;
+            min-width: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            position: relative !important;
+            z-index: 1 !important;
         }
-        div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {
-            gap: 8px !important;
+        div[data-testid="stForm"] div[data-testid="stCheckbox"],
+        div[data-testid="stForm"] div[data-testid="stCheckbox"] * {
+            pointer-events: auto !important;
         }
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] label,
+        div[data-testid="stForm"] div[data-testid="stCheckbox"] label {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 4px !important;
+            cursor: pointer !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+            margin-bottom: 0 !important;
+        }
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label div,
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {
             white-space: nowrap !important;
@@ -192,15 +201,15 @@ def apply_warm_theme() -> None:
             text-overflow: unset !important;
         }
         .member-tp-spacer {
-            height: 1.6rem;
+            height: 1.55rem;
         }
 
         /* 세로 모드(모바일 / 좁은 화면) 최적화 */
         @media (max-width: 768px) {
             .block-container {
-                padding-left: 0.85rem !important;
-                padding-right: 0.85rem !important;
-                padding-top: 2.6rem !important;
+                padding-left: 0.8rem !important;
+                padding-right: 0.8rem !important;
+                padding-top: 2.5rem !important;
                 padding-bottom: 3.5rem !important;
             }
             h1 {
@@ -218,22 +227,20 @@ def apply_warm_theme() -> None:
                 font-size: 0.85rem !important;
             }
             div[data-testid="stForm"] {
-                padding: 10px 10px !important;
+                padding: 10px 8px !important;
             }
-
-            /* 출석 체크(O/△/X) 바로 옆에 간증 · 기도부탁이 좁은 간격으로 붙고 글씨가 모두 보이도록 설정 */
             div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {
-                gap: 8px !important;
-                padding: 7px 2px !important;
+                gap: 6px !important;
+                padding: 6px 0 !important;
             }
             div[data-testid="stForm"] div[data-testid="stRadio"] label p {
-                font-size: 0.88rem !important;
+                font-size: 0.85rem !important;
             }
             div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {
-                gap: 6px !important;
+                gap: 5px !important;
             }
             div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {
-                font-size: 0.82rem !important;
+                font-size: 0.8rem !important;
             }
             .member-tp-spacer {
                 height: 1.45rem;
@@ -898,7 +905,7 @@ if meeting_names:
                     default_status = existing_status_map.get(member, "O")
                     default_idx = status_options.index(default_status) if default_status in status_options else 0
 
-                    m_col1, m_col2, m_col3 = st.columns([1.8, 1.0, 1.2])
+                    m_col1, m_col2, m_col3 = st.columns([1.45, 0.95, 1.15])
                     with m_col1:
                         attendance_status[member] = st.radio(
                             f"🍃 {member}",
