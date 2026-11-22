@@ -75,14 +75,21 @@ def apply_warm_theme() -> None:
             color: #3A2E26;
             letter-spacing: -0.01em;
         }
+        div[data-baseweb="tab-list"] {
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            gap: 4px !important;
+        }
         button[data-baseweb="tab"] {
             background-color: #F6EFE4;
             border-radius: 12px 12px 0 0;
             border: 1px solid #E8DEC9;
-            margin-right: 6px;
-            padding: 8px 16px;
+            margin-right: 4px;
+            padding: 8px 14px;
             color: #5C4E44;
             font-weight: 600;
+            white-space: nowrap !important;
+            flex: 0 0 auto !important;
         }
         button[data-baseweb="tab"][aria-selected="true"] {
             background-color: #FFFDF9;
@@ -118,7 +125,8 @@ def apply_warm_theme() -> None:
             border: none;
             border-radius: 12px;
             font-weight: 600;
-            padding: 0.5rem 1.2rem;
+            padding: 0.55rem 1.2rem;
+            width: 100%;
         }
         div[data-testid="stFormSubmitButton"] > button:hover {
             background-color: #C25832;
@@ -130,11 +138,15 @@ def apply_warm_theme() -> None:
             border-radius: 14px;
             padding: 6px;
         }
+
+        /* 모임 있는 날짜 칩: 좌우 배치 + 공간 부족 시 다음 줄로 자연스럽게 넘김 */
         div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) {
             display: flex !important;
+            flex-direction: row !important;
             flex-wrap: wrap !important;
-            gap: 4px !important;
+            gap: 6px !important;
             align-items: center !important;
+            width: 100% !important;
         }
         div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) > div[data-testid="stColumn"] {
             width: auto !important;
@@ -144,11 +156,86 @@ def apply_warm_theme() -> None:
         }
         div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {
             width: auto !important;
-            padding: 3px 9px !important;
-            min-height: 1.85rem !important;
+            padding: 4px 10px !important;
+            min-height: 1.9rem !important;
             font-size: 0.82rem !important;
             border-radius: 999px !important;
             white-space: nowrap !important;
+        }
+
+        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 가로 행 공통 스타일 */
+        .member-tp-spacer {
+            height: 1.65rem;
+        }
+
+        /* 세로 모드(모바일 / 좁은 화면) 최적화 */
+        @media (max-width: 768px) {
+            .block-container {
+                padding-left: 0.9rem !important;
+                padding-right: 0.9rem !important;
+                padding-top: 2.6rem !important;
+                padding-bottom: 3.5rem !important;
+            }
+            h1 {
+                font-size: 1.45rem !important;
+                line-height: 1.3 !important;
+            }
+            h2 {
+                font-size: 1.2rem !important;
+            }
+            h3 {
+                font-size: 1.05rem !important;
+            }
+            button[data-baseweb="tab"] {
+                padding: 7px 10px !important;
+                font-size: 0.85rem !important;
+            }
+            div[data-testid="stForm"] {
+                padding: 10px 10px !important;
+            }
+
+            /* 출석 체크 행(라디오 O/△/X + 간증 + 기도부탁)을 세로 모드에서도 한 줄로 나란히 배치 */
+            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {
+                display: flex !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                gap: 6px !important;
+                padding: 8px 4px !important;
+                border-bottom: 1px dashed #EFE5D8 !important;
+                width: 100% !important;
+            }
+            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+                min-width: 0 !important;
+                padding: 0 !important;
+            }
+            /* 첫 번째 컬럼(이름 + O/△/X 라디오) */
+            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {
+                flex: 1 1 56% !important;
+            }
+            /* 두 번째 컬럼(간증 체크박스) */
+            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
+                flex: 0 0 auto !important;
+            }
+            /* 세 번째 컬럼(기도부탁 체크박스) */
+            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {
+                flex: 0 0 auto !important;
+            }
+
+            div[data-testid="stForm"] div[data-testid="stRadio"] label p {
+                font-size: 0.88rem !important;
+            }
+            div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {
+                gap: 8px !important;
+            }
+            div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {
+                font-size: 0.82rem !important;
+                white-space: nowrap !important;
+            }
+            .member-tp-spacer {
+                height: 1.35rem;
+            }
         }
         </style>
         """,
@@ -809,7 +896,7 @@ if meeting_names:
                     default_status = existing_status_map.get(member, "O")
                     default_idx = status_options.index(default_status) if default_status in status_options else 0
 
-                    m_col1, m_col2, m_col3 = st.columns([3, 1.3, 1.5])
+                    m_col1, m_col2, m_col3 = st.columns([3, 1.2, 1.3])
                     with m_col1:
                         attendance_status[member] = st.radio(
                             f"🍃 {member}",
@@ -819,14 +906,14 @@ if meeting_names:
                             key=f"radio_{selected_meeting}_{date_str}_{member}",
                         )
                     with m_col2:
-                        st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
+                        st.markdown("<div class='member-tp-spacer'></div>", unsafe_allow_html=True)
                         testimony_checked[member] = st.checkbox(
                             f"{EMOJI_TESTIMONY} 간증",
                             value=existing_testimony_map.get(member, False),
                             key=f"testimony_{selected_meeting}_{date_str}_{member}",
                         )
                     with m_col3:
-                        st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
+                        st.markdown("<div class='member-tp-spacer'></div>", unsafe_allow_html=True)
                         prayer_checked[member] = st.checkbox(
                             f"{EMOJI_PRAYER} 기도부탁",
                             value=existing_prayer_map.get(member, False),
