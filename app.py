@@ -16,29 +16,52 @@ TAG_PRAYER = "[기도부탁]"
 EMOJI_TESTIMONY = "💬"
 EMOJI_PRAYER = "🙏"
 
+# 1월 ~ 12월 월별 배경 색감 팔레트 (상단 그라데이션 시작색, 하단 그라데이션 끝색)
+MONTHLY_BG_THEMES: dict[int, tuple[str, str]] = {
+    1: ("#F7FAFC", "#EBF2F7"),   # 1월: 맑고 차분한 겨울 아침
+    2: ("#F9F7FC", "#EFEAF7"),   # 2월: 이른 봄을 기다리는 연보라빛
+    3: ("#FDF7FA", "#F8EAF1"),   # 3월: 벚꽃·봄기운 머금은 핑크빛
+    4: ("#F8FCF7", "#ECF6EA"),   # 4월: 싱그러운 새싹 그린빛
+    5: ("#F7FCFA", "#E8F5F0"),   # 5월: 화사한 5월 민트·연두빛
+    6: ("#F7FAF9", "#E6F1EE"),   # 6월: 초여름 청량한 세이지빛
+    7: ("#F5FAFC", "#E2F0F7"),   # 7월: 시원한 한여름 하늘빛
+    8: ("#F6FBF9", "#E3F2EC"),   # 8월: 늦여름 바다·숲의 시원한 결
+    9: ("#FCF9F2", "#F5ECD8"),   # 9월: 곡식이 익어가는 초가을 크림빛
+    10: ("#FCF7F2", "#F6E7D9"),  # 10월: 단풍 감성의 따뜻한 살구·앰버빛
+    11: ("#FCF9F4", "#F7F1E7"),  # 11월: 포근한 늦가을 크림·오트밀빛
+    12: ("#FAF6F5", "#F2E6E3"),  # 12월: 따뜻한 연말 코지 로즈·브라운빛
+}
+
+
+def get_monthly_bg_gradient(month: int | None = None) -> str:
+    target_month = month if month in MONTHLY_BG_THEMES else datetime.date.today().month
+    start_color, end_color = MONTHLY_BG_THEMES[target_month]
+    return f"linear-gradient(180deg, {start_color} 0%, {end_color} 100%)"
+
 
 def apply_warm_theme() -> None:
+    bg_gradient = get_monthly_bg_gradient()
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp {
-            background: linear-gradient(180deg, #FCF9F4 0%, #F7F1E7 100%);
+        .stApp {{
+            background: {bg_gradient};
             color: #3A322C;
-        }
-        section[data-testid="stSidebar"] {
+        }}
+        section[data-testid="stSidebar"] {{
             background-color: #F3ECE0;
             border-right: 1px solid #E6DACA;
-        }
-        h1, h2, h3 {
+        }}
+        h1, h2, h3 {{
             color: #3A2E26;
             letter-spacing: -0.01em;
-        }
-        div[data-baseweb="tab-list"] {
+        }}
+        div[data-baseweb="tab-list"] {{
             flex-wrap: nowrap !important;
             overflow-x: auto !important;
             gap: 4px !important;
-        }
-        button[data-baseweb="tab"] {
+        }}
+        button[data-baseweb="tab"] {{
             background-color: #F6EFE4;
             border-radius: 12px 12px 0 0;
             border: 1px solid #E8DEC9;
@@ -48,36 +71,36 @@ def apply_warm_theme() -> None:
             font-weight: 600;
             white-space: nowrap !important;
             flex: 0 0 auto !important;
-        }
-        button[data-baseweb="tab"][aria-selected="true"] {
+        }}
+        button[data-baseweb="tab"][aria-selected="true"] {{
             background-color: #FFFDF9;
             color: #C85A32;
             border-bottom-color: #FFFDF9;
-        }
+        }}
         div[data-testid="stForm"],
-        div[data-testid="stExpander"] > details {
+        div[data-testid="stExpander"] > details {{
             background-color: #FFFDF9;
             border: 1px solid #EADFD0;
             border-radius: 16px;
             padding: 12px 16px;
             box-shadow: 0 4px 14px rgba(92, 70, 50, 0.04);
-        }
+        }}
         div.stButton > button,
-        div.stDownloadButton > button {
+        div.stDownloadButton > button {{
             background-color: #FFF7EE;
             color: #7A3E26;
             border: 1px solid #E5BEAA;
             border-radius: 12px;
             font-weight: 600;
             transition: all 0.18s ease;
-        }
+        }}
         div.stButton > button:hover,
-        div.stDownloadButton > button:hover {
+        div.stDownloadButton > button:hover {{
             background-color: #FDE8D7;
             border-color: #D49377;
             color: #5C2B18;
-        }
-        div[data-testid="stFormSubmitButton"] > button {
+        }}
+        div[data-testid="stFormSubmitButton"] > button {{
             background-color: #D96B43;
             color: #FFFFFF;
             border: none;
@@ -85,44 +108,44 @@ def apply_warm_theme() -> None:
             font-weight: 600;
             padding: 0.55rem 1.2rem;
             width: 100%;
-        }
-        div[data-testid="stFormSubmitButton"] > button:hover {
+        }}
+        div[data-testid="stFormSubmitButton"] > button:hover {{
             background-color: #C25832;
             color: #FFFFFF;
-        }
-        div[data-testid="stDataFrame"] {
+        }}
+        div[data-testid="stDataFrame"] {{
             background-color: #FFFDF9;
             border: 1px solid #EADFD0;
             border-radius: 14px;
             padding: 6px;
-        }
+        }}
 
         /* 모임 있는 날짜 칩: 좌우 배치 + 공간 부족 시 다음 줄로 자연스럽게 넘김 */
-        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) {
+        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) {{
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
             gap: 6px !important;
             align-items: center !important;
             width: 100% !important;
-        }
-        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) > div[data-testid="stColumn"] {
+        }}
+        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) > div[data-testid="stColumn"] {{
             width: auto !important;
             flex: 0 0 auto !important;
             min-width: unset !important;
             padding: 0 !important;
-        }
-        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {
+        }}
+        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {{
             width: auto !important;
             padding: 4px 10px !important;
             min-height: 1.9rem !important;
             font-size: 0.82rem !important;
             border-radius: 999px !important;
             white-space: nowrap !important;
-        }
+        }}
 
         /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 클릭 영역을 막지 않고 간격만 한 칸 정도로 유지 */
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {
+        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
@@ -130,19 +153,19 @@ def apply_warm_theme() -> None:
             gap: 8px !important;
             padding: 6px 2px !important;
             border-bottom: 1px dashed #EFE5D8 !important;
-        }
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        }}
+        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             min-width: 0 !important;
             padding-left: 0 !important;
             padding-right: 0 !important;
             position: relative !important;
             z-index: 1 !important;
-        }
+        }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"],
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] * {
+        div[data-testid="stForm"] div[data-testid="stCheckbox"] * {{
             pointer-events: auto !important;
-        }
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] label {
+        }}
+        div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
             display: inline-flex !important;
             align-items: center !important;
             gap: 4px !important;
@@ -151,59 +174,59 @@ def apply_warm_theme() -> None:
             overflow: visible !important;
             text-overflow: unset !important;
             margin-bottom: 0 !important;
-        }
+        }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label div,
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {
+        div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
             white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: unset !important;
-        }
-        .member-tp-spacer {
+        }}
+        .member-tp-spacer {{
             height: 1.55rem;
-        }
+        }}
 
         /* 세로 모드(모바일 / 좁은 화면) 최적화 */
-        @media (max-width: 768px) {
-            .block-container {
+        @media (max-width: 768px) {{
+            .block-container {{
                 padding-left: 0.8rem !important;
                 padding-right: 0.8rem !important;
                 padding-top: 2.5rem !important;
                 padding-bottom: 3.5rem !important;
-            }
-            h1 {
+            }}
+            h1 {{
                 font-size: 1.45rem !important;
                 line-height: 1.3 !important;
-            }
-            h2 {
+            }}
+            h2 {{
                 font-size: 1.2rem !important;
-            }
-            h3 {
+            }}
+            h3 {{
                 font-size: 1.05rem !important;
-            }
-            button[data-baseweb="tab"] {
+            }}
+            button[data-baseweb="tab"] {{
                 padding: 7px 10px !important;
                 font-size: 0.85rem !important;
-            }
-            div[data-testid="stForm"] {
+            }}
+            div[data-testid="stForm"] {{
                 padding: 10px 8px !important;
-            }
-            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {
+            }}
+            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
                 gap: 6px !important;
                 padding: 6px 0 !important;
-            }
-            div[data-testid="stForm"] div[data-testid="stRadio"] label p {
+            }}
+            div[data-testid="stForm"] div[data-testid="stRadio"] label p {{
                 font-size: 0.85rem !important;
-            }
-            div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {
+            }}
+            div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {{
                 gap: 5px !important;
-            }
-            div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {
+            }}
+            div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
                 font-size: 0.8rem !important;
-            }
-            .member-tp-spacer {
+            }}
+            .member-tp-spacer {{
                 height: 1.45rem;
-            }
-        }
+            }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
