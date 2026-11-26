@@ -1,4 +1,6 @@
 import datetime
+import hashlib
+import hmac
 import uuid
 
 import pandas as pd
@@ -13,50 +15,6 @@ TAG_TESTIMONY = "[간증]"
 TAG_PRAYER = "[기도부탁]"
 EMOJI_TESTIMONY = "💬"
 EMOJI_PRAYER = "🙏"
-
-
-@st.cache_resource
-def get_supabase_client() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
-
-
-supabase = get_supabase_client()
-
-if "confirm_delete" not in st.session_state:
-    st.session_state.confirm_delete = False
-if "birthday_toast_shown" not in st.session_state:
-    st.session_state.birthday_toast_shown = False
-
-
-def format_date_with_weekday(date_str: str) -> str:
-    try:
-        dt = datetime.date.fromisoformat(str(date_str).strip())
-        return f"{dt.isoformat()}({WEEKDAY_KO[dt.weekday()]})"
-    except ValueError:
-        return str(date_str)
-
-
-def parse_note_and_flags(raw_note: str | None) -> tuple[str, bool, bool]:
-    text = str(raw_note or "")
-    has_testimony = TAG_TESTIMONY in text
-    has_prayer = TAG_PRAYER in text
-    clean_text = text.replace(TAG_TESTIMONY, "").replace(TAG_PRAYER, "").strip()
-    return clean_text, has_testimony, has_prayer
-
-
-def build_note_with_flags(clean_note: str, has_testimony: bool, has_prayer: bool) -> str:
-    tags = []
-    if has_testimony:
-        tags.append(TAG_TESTIMONY)
-    if has_prayer:
-        tags.append(TAG_PRAYER)
-    prefix = " ".join(tags)
-    body = clean_note.strip()
-    if prefix and body:
-        return f"{prefix} {body}"
-    return prefix or body
 
 
 def apply_warm_theme() -> None:
@@ -253,6 +211,121 @@ def apply_warm_theme() -> None:
 
 
 apply_warm_theme()
+
+
+def _exact_match(a: str, b: str) -> bool:
+    return hmac.compare_digest(str(a).encode("utf-8"), str(b).encode("utf-8"))
+
+
+def _make_device_token(username: str, password: str, salt: str) -> str:
+    raw = f"{username}::{password}::{salt}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _has_valid_device_token(expected_user: str, expected_pass: str) -> bool:
+    token = st.query_params.get("auth_device", "")
+    if not token:
+        return False
+    salt = str(st.secrets.get("APP_AUTH_SALT", "default-attendance-salt"))
+    valid_token = _make_device_token(expected_user, expected_pass, salt)
+    return hmac.compare_digest(str(token), valid_token)
+
+
+def render_login_screen() -> None:
+    st.title("🔐 통합 단체 출석부 로그인")
+    st.caption("등록된 아이디와 비밀번호를 입력해야 출석부 화면이 열립니다. (형식·문자 제약 없음)")
+
+    expected_user = st.secrets.get("APP_USERNAME", "")
+    expected_pass = st.secrets.get("APP_PASSWORD", "")
+
+    if not expected_user or not expected_pass:
+        st.warning(
+            "Streamlit Cloud **Settings → Secrets**에 `APP_USERNAME`과 `APP_PASSWORD`를 먼저 설정해 주세요."
+        )
+        st.code(
+            'APP_USERNAME = "원하는아이디"\nAPP_PASSWORD = "원하는비밀번호"\nAPP_AUTH_SALT = "임의의비밀문구"',
+            language="toml",
+        )
+        st.stop()
+
+    if _has_valid_device_token(expected_user, expected_pass):
+        st.session_state["logged_in"] = True
+        st.rerun()
+
+    _, center_col, _ = st.columns([1, 2, 1])
+    with center_col:
+        with st.form(key="login_form"):
+            input_id = st.text_input("아이디", placeholder="아이디 입력")
+            input_pw = st.text_input("비밀번호", type="password", placeholder="비밀번호 입력")
+            remember_device = st.checkbox("이 기기에서 로그인 유지", value=True)
+            login_submitted = st.form_submit_button("🔓 로그인")
+
+            if login_submitted:
+                if _exact_match(input_id, expected_user) and _exact_match(input_pw, expected_pass):
+                    st.session_state["logged_in"] = True
+                    if remember_device:
+                        salt = str(st.secrets.get("APP_AUTH_SALT", "default-attendance-salt"))
+                        st.query_params["auth_device"] = _make_device_token(
+                            expected_user, expected_pass, salt
+                        )
+                    elif "auth_device" in st.query_params:
+                        del st.query_params["auth_device"]
+                    st.rerun()
+                else:
+                    st.error("아이디 또는 비밀번호가 일치하지 않습니다.")
+
+    st.stop()
+
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    render_login_screen()
+
+
+@st.cache_resource
+def get_supabase_client() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+
+supabase = get_supabase_client()
+
+if "confirm_delete" not in st.session_state:
+    st.session_state.confirm_delete = False
+if "birthday_toast_shown" not in st.session_state:
+    st.session_state.birthday_toast_shown = False
+
+
+def format_date_with_weekday(date_str: str) -> str:
+    try:
+        dt = datetime.date.fromisoformat(str(date_str).strip())
+        return f"{dt.isoformat()}({WEEKDAY_KO[dt.weekday()]})"
+    except ValueError:
+        return str(date_str)
+
+
+def parse_note_and_flags(raw_note: str | None) -> tuple[str, bool, bool]:
+    text = str(raw_note or "")
+    has_testimony = TAG_TESTIMONY in text
+    has_prayer = TAG_PRAYER in text
+    clean_text = text.replace(TAG_TESTIMONY, "").replace(TAG_PRAYER, "").strip()
+    return clean_text, has_testimony, has_prayer
+
+
+def build_note_with_flags(clean_note: str, has_testimony: bool, has_prayer: bool) -> str:
+    tags = []
+    if has_testimony:
+        tags.append(TAG_TESTIMONY)
+    if has_prayer:
+        tags.append(TAG_PRAYER)
+    prefix = " ".join(tags)
+    body = clean_note.strip()
+    if prefix and body:
+        return f"{prefix} {body}"
+    return prefix or body
 
 
 def normalize_mmdd(raw_val: str) -> str | None:
@@ -595,6 +668,14 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
 
 
 st.sidebar.header("🌿 출석부 관리")
+if st.sidebar.button("🔒 로그아웃"):
+    st.session_state["logged_in"] = False
+    st.session_state["confirm_delete"] = False
+    if "auth_device" in st.query_params:
+        del st.query_params["auth_device"]
+    st.rerun()
+
+st.sidebar.markdown("---")
 
 st.sidebar.subheader("✨ 새 모임 만들기")
 new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder="예: 31구역모임").strip()
