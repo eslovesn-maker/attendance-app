@@ -18,18 +18,18 @@ EMOJI_PRAYER = "🙏"
 
 # 1월 ~ 12월 월별 배경 색감 팔레트 (상단 그라데이션 시작색, 하단 그라데이션 끝색)
 MONTHLY_BG_THEMES: dict[int, tuple[str, str]] = {
-    1: ("#F7FAFC", "#EBF2F7"),   # 1월: 맑고 차분한 겨울 아침
-    2: ("#F9F7FC", "#EFEAF7"),   # 2월: 이른 봄을 기다리는 연보라빛
-    3: ("#FDF7FA", "#F8EAF1"),   # 3월: 벚꽃·봄기운 머금은 핑크빛
-    4: ("#F8FCF7", "#ECF6EA"),   # 4월: 싱그러운 새싹 그린빛
-    5: ("#F7FCFA", "#E8F5F0"),   # 5월: 화사한 5월 민트·연두빛
-    6: ("#F7FAF9", "#E6F1EE"),   # 6월: 초여름 청량한 세이지빛
-    7: ("#F5FAFC", "#E2F0F7"),   # 7월: 시원한 한여름 하늘빛
-    8: ("#F6FBF9", "#E3F2EC"),   # 8월: 늦여름 바다·숲의 시원한 결
-    9: ("#FCF9F2", "#F5ECD8"),   # 9월: 곡식이 익어가는 초가을 크림빛
-    10: ("#FCF7F2", "#F6E7D9"),  # 10월: 단풍 감성의 따뜻한 살구·앰버빛
-    11: ("#FCF9F4", "#F7F1E7"),  # 11월: 포근한 늦가을 크림·오트밀빛
-    12: ("#FAF6F5", "#F2E6E3"),  # 12월: 따뜻한 연말 코지 로즈·브라운빛
+    1: ("#F7FAFC", "#EBF2F7"),
+    2: ("#F9F7FC", "#EFEAF7"),
+    3: ("#FDF7FA", "#F8EAF1"),
+    4: ("#F8FCF7", "#ECF6EA"),
+    5: ("#F7FCFA", "#E8F5F0"),
+    6: ("#F7FAF9", "#E6F1EE"),
+    7: ("#F5FAFC", "#E2F0F7"),
+    8: ("#F6FBF9", "#E3F2EC"),
+    9: ("#FCF9F2", "#F5ECD8"),
+    10: ("#FCF7F2", "#F6E7D9"),
+    11: ("#FCF9F4", "#F7F1E7"),
+    12: ("#FAF6F5", "#F2E6E3"),
 }
 
 
@@ -144,14 +144,14 @@ def apply_warm_theme() -> None:
             white-space: nowrap !important;
         }}
 
-        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 클릭 영역을 막지 않고 간격만 한 칸 정도로 유지 */
+        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 체크박스 클릭이 방해받지 않도록 설정 */
         div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
-            gap: 8px !important;
-            padding: 6px 2px !important;
+            gap: 10px !important;
+            padding: 8px 4px !important;
             border-bottom: 1px dashed #EFE5D8 !important;
         }}
         div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
@@ -159,21 +159,26 @@ def apply_warm_theme() -> None:
             padding-left: 0 !important;
             padding-right: 0 !important;
             position: relative !important;
-            z-index: 1 !important;
+            z-index: 2 !important;
         }}
-        div[data-testid="stForm"] div[data-testid="stCheckbox"],
+        div[data-testid="stForm"] div[data-testid="stCheckbox"] {{
+            position: relative !important;
+            z-index: 3 !important;
+            pointer-events: auto !important;
+        }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] * {{
             pointer-events: auto !important;
         }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
             display: inline-flex !important;
             align-items: center !important;
-            gap: 4px !important;
+            gap: 6px !important;
             cursor: pointer !important;
             white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: unset !important;
             margin-bottom: 0 !important;
+            padding: 4px 6px !important;
         }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label div,
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
@@ -182,7 +187,7 @@ def apply_warm_theme() -> None:
             text-overflow: unset !important;
         }}
         .member-tp-spacer {{
-            height: 1.55rem;
+            height: 1.5rem;
         }}
 
         /* 세로 모드(모바일 / 좁은 화면) 최적화 */
@@ -224,7 +229,7 @@ def apply_warm_theme() -> None:
                 font-size: 0.8rem !important;
             }}
             .member-tp-spacer {{
-                height: 1.45rem;
+                height: 1.4rem;
             }}
         }}
         </style>
@@ -309,8 +314,13 @@ if not st.session_state["logged_in"]:
 
 @st.cache_resource
 def get_supabase_client() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+    url = str(st.secrets.get("SUPABASE_URL", "")).strip()
+    key = str(st.secrets.get("SUPABASE_KEY", "")).strip()
+    if not (url.startswith("https://") or url.startswith("http://")) or not key:
+        st.error(
+            "Streamlit Cloud **Settings → Secrets**에 올바른 `SUPABASE_URL`(`https://...`)과 `SUPABASE_KEY`를 입력하고 **Save**를 눌러주세요."
+        )
+        st.stop()
     return create_client(url, key)
 
 
@@ -1009,7 +1019,7 @@ if meeting_names:
                     default_status = existing_status_map.get(member, "O")
                     default_idx = status_options.index(default_status) if default_status in status_options else 0
 
-                    m_col1, m_col2, m_col3 = st.columns([1.45, 0.95, 1.15])
+                    m_col1, m_col2, m_col3 = st.columns([1.45, 1.0, 1.2])
                     with m_col1:
                         attendance_status[member] = st.radio(
                             f"🍃 {member}",
