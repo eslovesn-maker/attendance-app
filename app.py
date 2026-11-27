@@ -120,7 +120,7 @@ def apply_warm_theme() -> None:
             padding: 6px;
         }}
 
-        /* 출석 기록 있는 날짜 칩: HTML key 속성 대신 컨테이너 클래스 기준으로 정확히 매칭 */
+        /* 출석 기록 있는 날짜 칩: 세로/가로 모드 모두 날짜 전체가 보이도록 설정 */
         div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-direction: row !important;
@@ -154,59 +154,10 @@ def apply_warm_theme() -> None:
             text-overflow: unset !important;
         }}
 
-        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 라디오 열이 체크박스 열을 덮지 않도록 격리 */
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            align-items: center !important;
-            gap: 8px !important;
-            padding: 8px 4px !important;
-            border-bottom: 1px dashed #EFE5D8 !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {{
-            flex: 1.45 1 0% !important;
-            min-width: 0 !important;
-            overflow: hidden !important;
-            position: relative !important;
-            z-index: 1 !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {{
-            flex: 0.95 0 auto !important;
-            min-width: max-content !important;
-            position: relative !important;
-            z-index: 5 !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {{
-            flex: 1.15 0 auto !important;
-            min-width: max-content !important;
-            position: relative !important;
-            z-index: 5 !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] {{
-            position: relative !important;
-            z-index: 6 !important;
-            pointer-events: auto !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] * {{
-            pointer-events: auto !important;
-        }}
+        /* 멤버 행 구분선 및 체크박스 라벨 줄바꿈 방지 */
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
-            display: inline-flex !important;
-            align-items: center !important;
-            gap: 5px !important;
+            white-space: nowrap !important;
             cursor: pointer !important;
-            white-space: nowrap !important;
-            overflow: visible !important;
-            text-overflow: unset !important;
-            margin-bottom: 0 !important;
-            padding: 4px 4px !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] label div,
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
-            white-space: nowrap !important;
-            overflow: visible !important;
-            text-overflow: unset !important;
         }}
         .member-tp-spacer {{
             height: 1.5rem;
@@ -235,28 +186,17 @@ def apply_warm_theme() -> None:
                 font-size: 0.85rem !important;
             }}
             div[data-testid="stForm"] {{
-                padding: 10px 6px !important;
+                padding: 10px 8px !important;
             }}
             div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
                 padding: 4px 9px !important;
                 font-size: 0.8rem !important;
             }}
-            div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
-                gap: 4px !important;
-                padding: 6px 0 !important;
-            }}
             div[data-testid="stForm"] div[data-testid="stRadio"] label p {{
                 font-size: 0.82rem !important;
             }}
-            div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {{
-                gap: 4px !important;
-            }}
-            div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
-                gap: 3px !important;
-                padding: 3px 2px !important;
-            }}
             div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
-                font-size: 0.78rem !important;
+                font-size: 0.8rem !important;
             }}
             .member-tp-spacer {{
                 height: 1.4rem;
@@ -1099,7 +1039,7 @@ if meeting_names:
                     default_status = existing_status_map.get(member, "O")
                     default_idx = status_options.index(default_status) if default_status in status_options else 0
 
-                    m_col1, m_col2, m_col3 = st.columns([1.45, 0.95, 1.15])
+                    m_col1, m_col2, m_col3 = st.columns([1.45, 1.0, 1.15])
                     with m_col1:
                         attendance_status[member] = st.radio(
                             f"🍃 {member}",
@@ -1122,6 +1062,7 @@ if meeting_names:
                             value=existing_prayer_map.get(member, False),
                             key=f"prayer_{selected_meeting}_{date_str}_{member}",
                         )
+                    st.markdown("<hr style='margin:4px 0 8px 0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
 
                 note = st.text_input(
                     "☕ 이번 모임 특이사항 (예: 뒷풀이 장소 등)",
