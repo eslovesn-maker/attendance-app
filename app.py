@@ -120,8 +120,8 @@ def apply_warm_theme() -> None:
             padding: 6px;
         }}
 
-        /* 모임 있는 날짜 칩: 세로/가로 모드 모두 날짜 전체가 보이도록 설정 */
-        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) {{
+        /* 출석 기록 있는 날짜 칩: HTML key 속성 대신 컨테이너 클래스 기준으로 정확히 매칭 */
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
@@ -129,45 +129,63 @@ def apply_warm_theme() -> None:
             align-items: center !important;
             width: 100% !important;
         }}
-        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) > div[data-testid="stColumn"] {{
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             width: auto !important;
             flex: 0 0 auto !important;
             min-width: max-content !important;
+            max-width: none !important;
             padding: 0 !important;
         }}
-        div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {{
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
             width: auto !important;
             min-width: max-content !important;
-            padding: 4px 10px !important;
-            min-height: 1.9rem !important;
-            font-size: 0.82rem !important;
+            padding: 5px 11px !important;
+            min-height: 2rem !important;
+            font-size: 0.84rem !important;
             line-height: 1.2 !important;
             border-radius: 999px !important;
             white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: unset !important;
         }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button p {{
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+        }}
 
-        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 체크박스 클릭이 방해받지 않도록 설정 */
+        /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 라디오 열이 체크박스 열을 덮지 않도록 격리 */
         div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
-            gap: 10px !important;
+            gap: 8px !important;
             padding: 8px 4px !important;
             border-bottom: 1px dashed #EFE5D8 !important;
         }}
-        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {{
+            flex: 1.45 1 0% !important;
             min-width: 0 !important;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
+            overflow: hidden !important;
             position: relative !important;
-            z-index: 2 !important;
+            z-index: 1 !important;
+        }}
+        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {{
+            flex: 0.95 0 auto !important;
+            min-width: max-content !important;
+            position: relative !important;
+            z-index: 5 !important;
+        }}
+        div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {{
+            flex: 1.15 0 auto !important;
+            min-width: max-content !important;
+            position: relative !important;
+            z-index: 5 !important;
         }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] {{
             position: relative !important;
-            z-index: 3 !important;
+            z-index: 6 !important;
             pointer-events: auto !important;
         }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] * {{
@@ -176,13 +194,13 @@ def apply_warm_theme() -> None:
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
             display: inline-flex !important;
             align-items: center !important;
-            gap: 6px !important;
+            gap: 5px !important;
             cursor: pointer !important;
             white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: unset !important;
             margin-bottom: 0 !important;
-            padding: 4px 6px !important;
+            padding: 4px 4px !important;
         }}
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label div,
         div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
@@ -197,8 +215,8 @@ def apply_warm_theme() -> None:
         /* 세로 모드(모바일 / 좁은 화면) 최적화 */
         @media (max-width: 768px) {{
             .block-container {{
-                padding-left: 0.8rem !important;
-                padding-right: 0.8rem !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
                 padding-top: 2.5rem !important;
                 padding-bottom: 3.5rem !important;
             }}
@@ -217,24 +235,28 @@ def apply_warm_theme() -> None:
                 font-size: 0.85rem !important;
             }}
             div[data-testid="stForm"] {{
-                padding: 10px 8px !important;
+                padding: 10px 6px !important;
             }}
-            div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {{
-                padding: 4px 8px !important;
-                font-size: 0.78rem !important;
+            div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
+                padding: 4px 9px !important;
+                font-size: 0.8rem !important;
             }}
             div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
-                gap: 6px !important;
+                gap: 4px !important;
                 padding: 6px 0 !important;
             }}
             div[data-testid="stForm"] div[data-testid="stRadio"] label p {{
-                font-size: 0.85rem !important;
+                font-size: 0.82rem !important;
             }}
             div[data-testid="stForm"] div[data-testid="stRadio"] div[role="radiogroup"] {{
-                gap: 5px !important;
+                gap: 4px !important;
+            }}
+            div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
+                gap: 3px !important;
+                padding: 3px 2px !important;
             }}
             div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
-                font-size: 0.8rem !important;
+                font-size: 0.78rem !important;
             }}
             .member-tp-spacer {{
                 height: 1.4rem;
@@ -935,21 +957,22 @@ if meeting_names:
             current_date_iso = str(meeting_date)
 
             if recorded_dates:
-                st.markdown(
-                    "<span style='font-size:0.84rem; color:#B83227; font-weight:600;'>"
-                    "📌 출석 기록 있는 날짜</span>",
-                    unsafe_allow_html=True,
-                )
-                shown_dates = recorded_dates[:12]
-                date_cols = st.columns(len(shown_dates))
-                for idx, d_str in enumerate(shown_dates):
-                    with date_cols[idx]:
-                        st.button(
-                            f"● {format_short_date(d_str)}",
-                            key=f"red_btn_{selected_meeting}_{d_str}",
-                            on_click=_set_target_date,
-                            args=(d_str,),
-                        )
+                with st.container():
+                    st.markdown(
+                        "<div class='date-chips-anchor' style='font-size:0.84rem; color:#B83227; font-weight:600; margin-bottom:4px;'>"
+                        "📌 출석 기록 있는 날짜</div>",
+                        unsafe_allow_html=True,
+                    )
+                    shown_dates = recorded_dates[:12]
+                    date_cols = st.columns(len(shown_dates))
+                    for idx, d_str in enumerate(shown_dates):
+                        with date_cols[idx]:
+                            st.button(
+                                f"● {format_short_date(d_str)}",
+                                key=f"red_btn_{selected_meeting}_{d_str}",
+                                on_click=_set_target_date,
+                                args=(d_str,),
+                            )
                 if len(recorded_dates) > 12:
                     st.caption(f"앞 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
 
@@ -1076,7 +1099,7 @@ if meeting_names:
                     default_status = existing_status_map.get(member, "O")
                     default_idx = status_options.index(default_status) if default_status in status_options else 0
 
-                    m_col1, m_col2, m_col3 = st.columns([1.45, 1.0, 1.2])
+                    m_col1, m_col2, m_col3 = st.columns([1.45, 0.95, 1.15])
                     with m_col1:
                         attendance_status[member] = st.radio(
                             f"🍃 {member}",
