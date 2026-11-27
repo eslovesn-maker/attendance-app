@@ -120,7 +120,7 @@ def apply_warm_theme() -> None:
             padding: 6px;
         }}
 
-        /* 모임 있는 날짜 칩: 좌우 배치 + 공간 부족 시 다음 줄로 자연스럽게 넘김 */
+        /* 모임 있는 날짜 칩: 세로/가로 모드 모두 날짜 전체가 보이도록 설정 */
         div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) {{
             display: flex !important;
             flex-direction: row !important;
@@ -132,16 +132,20 @@ def apply_warm_theme() -> None:
         div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) > div[data-testid="stColumn"] {{
             width: auto !important;
             flex: 0 0 auto !important;
-            min-width: unset !important;
+            min-width: max-content !important;
             padding: 0 !important;
         }}
         div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {{
             width: auto !important;
+            min-width: max-content !important;
             padding: 4px 10px !important;
             min-height: 1.9rem !important;
             font-size: 0.82rem !important;
+            line-height: 1.2 !important;
             border-radius: 999px !important;
             white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
         }}
 
         /* 멤버별 출석(O/△/X) · 간증 · 기도부탁 행: 체크박스 클릭이 방해받지 않도록 설정 */
@@ -214,6 +218,10 @@ def apply_warm_theme() -> None:
             }}
             div[data-testid="stForm"] {{
                 padding: 10px 8px !important;
+            }}
+            div[data-testid="stHorizontalBlock"]:has(button[key^="red_btn_"]) div.stButton > button {{
+                padding: 4px 8px !important;
+                font-size: 0.78rem !important;
             }}
             div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {{
                 gap: 6px !important;
@@ -328,8 +336,18 @@ supabase = get_supabase_client()
 
 if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = False
+if "confirm_delete_date" not in st.session_state:
+    st.session_state.confirm_delete_date = False
 if "birthday_toast_shown" not in st.session_state:
     st.session_state.birthday_toast_shown = False
+
+
+def format_short_date(date_str: str) -> str:
+    try:
+        dt = datetime.date.fromisoformat(str(date_str).strip())
+        return dt.strftime("%y.%m.%d")
+    except ValueError:
+        return str(date_str)
 
 
 def format_date_with_weekday(date_str: str) -> str:
@@ -494,6 +512,12 @@ def load_attendance(meeting_name: str) -> pd.DataFrame:
         }
     )
     return df[["날짜", "이름", "출석상태", "비고"]]
+
+
+def delete_attendance_by_date(meeting_name: str, record_date: str) -> None:
+    supabase.table("attendance_records").delete().eq("meeting_name", meeting_name).eq(
+        "record_date", record_date
+    ).execute()
 
 
 def load_photos(meeting_name: str, record_date: str | None = None) -> list:
@@ -704,6 +728,7 @@ st.sidebar.header("🌿 출석부 관리")
 if st.sidebar.button("🔒 로그아웃"):
     st.session_state["logged_in"] = False
     st.session_state["confirm_delete"] = False
+    st.session_state["confirm_delete_date"] = False
     if "auth_device" in st.query_params:
         del st.query_params["auth_device"]
     st.rerun()
@@ -900,12 +925,14 @@ if meeting_names:
         def _set_target_date(target_iso: str) -> None:
             try:
                 st.session_state[date_input_key] = datetime.date.fromisoformat(target_iso)
+                st.session_state["confirm_delete_date"] = False
             except ValueError:
                 pass
 
         col1, col2 = st.columns(2)
         with col1:
             meeting_date = st.date_input("📅 모임 날짜 선택", key=date_input_key)
+            current_date_iso = str(meeting_date)
 
             if recorded_dates:
                 st.markdown(
@@ -918,13 +945,43 @@ if meeting_names:
                 for idx, d_str in enumerate(shown_dates):
                     with date_cols[idx]:
                         st.button(
-                            f"● {format_date_with_weekday(d_str)}",
+                            f"● {format_short_date(d_str)}",
                             key=f"red_btn_{selected_meeting}_{d_str}",
                             on_click=_set_target_date,
                             args=(d_str,),
                         )
                 if len(recorded_dates) > 12:
                     st.caption(f"앞 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
+
+                if current_date_iso in recorded_dates:
+                    if not st.session_state["confirm_delete_date"]:
+                        if st.button(
+                            f"🗑️ {format_short_date(current_date_iso)} 출석 기록 삭제",
+                            key=f"ask_del_date_{selected_meeting}_{current_date_iso}",
+                        ):
+                            st.session_state["confirm_delete_date"] = True
+                            st.rerun()
+                    else:
+                        st.warning(
+                            f"**{format_date_with_weekday(current_date_iso)}** 출석 기록을 삭제할까요?"
+                        )
+                        del_c1, del_c2 = st.columns(2)
+                        with del_c1:
+                            if st.button(
+                                "✅ 예, 기록 삭제",
+                                key=f"do_del_date_{selected_meeting}_{current_date_iso}",
+                            ):
+                                delete_attendance_by_date(selected_meeting, current_date_iso)
+                                st.session_state["confirm_delete_date"] = False
+                                st.success(f"{format_short_date(current_date_iso)} 출석 기록이 삭제되었습니다.")
+                                st.rerun()
+                        with del_c2:
+                            if st.button(
+                                "취소",
+                                key=f"cancel_del_date_{selected_meeting}_{current_date_iso}",
+                            ):
+                                st.session_state["confirm_delete_date"] = False
+                                st.rerun()
             else:
                 st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
 
