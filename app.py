@@ -77,7 +77,6 @@ def apply_warm_theme() -> None:
             color: #C85A32;
             border-bottom-color: #FFFDF9;
         }}
-        div[data-testid="stForm"],
         div[data-testid="stExpander"] > details {{
             background-color: #FFFDF9;
             border: 1px solid #EADFD0;
@@ -99,19 +98,6 @@ def apply_warm_theme() -> None:
             background-color: #FDE8D7;
             border-color: #D49377;
             color: #5C2B18;
-        }}
-        div[data-testid="stFormSubmitButton"] > button {{
-            background-color: #D96B43;
-            color: #FFFFFF;
-            border: none;
-            border-radius: 12px;
-            font-weight: 600;
-            padding: 0.55rem 1.2rem;
-            width: 100%;
-        }}
-        div[data-testid="stFormSubmitButton"] > button:hover {{
-            background-color: #C25832;
-            color: #FFFFFF;
         }}
         div[data-testid="stDataFrame"] {{
             background-color: #FFFDF9;
@@ -154,11 +140,6 @@ def apply_warm_theme() -> None:
             text-overflow: unset !important;
         }}
 
-        /* 멤버 행 구분선 및 체크박스 라벨 줄바꿈 방지 */
-        div[data-testid="stForm"] div[data-testid="stCheckbox"] label {{
-            white-space: nowrap !important;
-            cursor: pointer !important;
-        }}
         .member-tp-spacer {{
             height: 1.5rem;
         }}
@@ -185,17 +166,8 @@ def apply_warm_theme() -> None:
                 padding: 7px 10px !important;
                 font-size: 0.85rem !important;
             }}
-            div[data-testid="stForm"] {{
-                padding: 10px 8px !important;
-            }}
             div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
                 padding: 4px 9px !important;
-                font-size: 0.8rem !important;
-            }}
-            div[data-testid="stForm"] div[data-testid="stRadio"] label p {{
-                font-size: 0.82rem !important;
-            }}
-            div[data-testid="stForm"] div[data-testid="stCheckbox"] label p {{
                 font-size: 0.8rem !important;
             }}
             .member-tp-spacer {{
@@ -1019,7 +991,7 @@ if meeting_names:
             existing_note = ""
 
             if has_existing:
-                st.caption(f"✏️ **{date_with_day}**에 이미 저장된 기록이 있어 기존 값을 불러왔습니다. 수정 후 저장하면 덮어씌워집니다.")
+                st.caption(f"✏️ **{date_with_day}**에 이미 저장된 기록이 있어 기존 값을 불러왔습니다. 체크 후 아래 저장 버튼을 눌러주세요.")
                 for _, r in existing_day_df.iterrows():
                     m_name = str(r["이름"])
                     existing_status_map[m_name] = r["출석상태"]
@@ -1030,48 +1002,56 @@ if meeting_names:
                         existing_note = clean_memo
 
             status_options = ["O", "△", "X"]
-            with st.form(key=f"form_{selected_meeting}_{date_str}"):
-                attendance_status = {}
-                testimony_checked = {}
-                prayer_checked = {}
+            attendance_status = {}
+            testimony_checked = {}
+            prayer_checked = {}
 
+            with st.container(border=True):
                 for member in member_list:
+                    radio_key = f"radio_{selected_meeting}_{date_str}_{member}"
+                    testimony_key = f"testimony_{selected_meeting}_{date_str}_{member}"
+                    prayer_key = f"prayer_{selected_meeting}_{date_str}_{member}"
+
                     default_status = existing_status_map.get(member, "O")
-                    default_idx = status_options.index(default_status) if default_status in status_options else 0
+                    if radio_key not in st.session_state:
+                        st.session_state[radio_key] = default_status if default_status in status_options else "O"
+                    if testimony_key not in st.session_state:
+                        st.session_state[testimony_key] = existing_testimony_map.get(member, False)
+                    if prayer_key not in st.session_state:
+                        st.session_state[prayer_key] = existing_prayer_map.get(member, False)
 
                     m_col1, m_col2, m_col3 = st.columns([1.45, 1.0, 1.15])
                     with m_col1:
                         attendance_status[member] = st.radio(
                             f"🍃 {member}",
                             status_options,
-                            index=default_idx,
                             horizontal=True,
-                            key=f"radio_{selected_meeting}_{date_str}_{member}",
+                            key=radio_key,
                         )
                     with m_col2:
                         st.markdown("<div class='member-tp-spacer'></div>", unsafe_allow_html=True)
                         testimony_checked[member] = st.checkbox(
                             f"{EMOJI_TESTIMONY} 간증",
-                            value=existing_testimony_map.get(member, False),
-                            key=f"testimony_{selected_meeting}_{date_str}_{member}",
+                            key=testimony_key,
                         )
                     with m_col3:
                         st.markdown("<div class='member-tp-spacer'></div>", unsafe_allow_html=True)
                         prayer_checked[member] = st.checkbox(
                             f"{EMOJI_PRAYER} 기도부탁",
-                            value=existing_prayer_map.get(member, False),
-                            key=f"prayer_{selected_meeting}_{date_str}_{member}",
+                            key=prayer_key,
                         )
                     st.markdown("<hr style='margin:4px 0 8px 0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
 
+                note_key = f"note_{selected_meeting}_{date_str}"
+                if note_key not in st.session_state:
+                    st.session_state[note_key] = existing_note
+
                 note = st.text_input(
                     "☕ 이번 모임 특이사항 (예: 뒷풀이 장소 등)",
-                    value=existing_note,
-                    key=f"note_{selected_meeting}_{date_str}",
+                    key=note_key,
                 )
-                submitted = st.form_submit_button("🌿 출석 기록 자동 저장")
 
-                if submitted:
+                if st.button("🌿 출석 기록 저장하기", key=f"save_att_{selected_meeting}_{date_str}"):
                     supabase.table("attendance_records").delete().eq(
                         "meeting_name", selected_meeting
                     ).eq("record_date", date_str).execute()
@@ -1081,18 +1061,18 @@ if meeting_names:
                             "meeting_name": selected_meeting,
                             "record_date": date_str,
                             "member_name": member,
-                            "status": attendance_status[member],
+                            "status": st.session_state[f"radio_{selected_meeting}_{date_str}_{member}"],
                             "note": build_note_with_flags(
-                                note,
-                                testimony_checked[member],
-                                prayer_checked[member],
+                                st.session_state.get(note_key, ""),
+                                bool(st.session_state.get(f"testimony_{selected_meeting}_{date_str}_{member}", False)),
+                                bool(st.session_state.get(f"prayer_{selected_meeting}_{date_str}_{member}", False)),
                             ),
                         }
                         for member in member_list
                     ]
                     supabase.table("attendance_records").insert(payload).execute()
 
-                    st.success(f"'{selected_meeting}'의 {date_with_day} 출석 · 간증 · 기도부탁 기록이 DB에 자동 저장되었습니다!")
+                    st.success(f"'{selected_meeting}'의 {date_with_day} 출석 · 간증 · 기도부탁 기록이 저장되었습니다!")
                     st.rerun()
 
     with tab2:
