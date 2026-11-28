@@ -22,6 +22,7 @@ st.set_page_config(page_title="동행수첩", page_icon="🌿", layout="wide")
 PHOTO_BUCKET = "attendance-photos"
 WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 TAG_TESTIMONY = "[간증]"
+TAG_BIBLE = "[성경쿠폰]"  # 성경읽기 쿠폰을 전달한 출석 기록에 붙는 표시
 TAG_PRAYER = "[기도부탁]"
 EMOJI_TESTIMONY = "💬"
 EMOJI_PRAYER = "🙏"
@@ -572,12 +573,14 @@ def parse_note_and_flags(raw_note: str | None) -> tuple[str, bool, bool]:
     text = str(raw_note or "")
     has_testimony = TAG_TESTIMONY in text
     has_prayer = TAG_PRAYER in text
-    clean_text = text.replace(TAG_TESTIMONY, "").replace(TAG_PRAYER, "").strip()
+    clean_text = text.replace(TAG_TESTIMONY, "").replace(TAG_PRAYER, "").replace(TAG_BIBLE, "").strip()
     return clean_text, has_testimony, has_prayer
 
 
-def build_note_with_flags(clean_note: str, has_testimony: bool, has_prayer: bool) -> str:
+def build_note_with_flags(clean_note: str, has_testimony: bool, has_prayer: bool, has_bible: bool = False) -> str:
     tags = []
+    if has_bible:
+        tags.append(TAG_BIBLE)
     if has_testimony:
         tags.append(TAG_TESTIMONY)
     if has_prayer:
@@ -658,7 +661,11 @@ def join_memo(year, text: str) -> str:
     return f"{year_txt}|{text}" if text else year_txt
 
 
-GIFT_ICON = "🎟️"  # 교회 쿠폰
+GIFT_ICON = "🎟️"   # 구원생일 쿠폰
+BIBLE_ICON = "🎫"  # 성경읽기 쿠폰 (파란색으로 표시)
+BIBLE_STYLE = "filter:hue-rotate(190deg) saturate(1.4);"
+BIBLE_HTML = f"<span style='{BIBLE_STYLE}'>{BIBLE_ICON}</span>"
+CP_ICONS = {"s": GIFT_ICON, "b": BIBLE_ICON}
 
 
 def gift_year(memo: str | None) -> str:
@@ -667,9 +674,31 @@ def gift_year(memo: str | None) -> str:
     return found.group(1) if found else ""
 
 
-def gift_given_this_year(memo: str | None) -> bool:
-    """올해(KST) 쿠폰을 이미 전달했는지. 해가 바뀌면 자동으로 다시 '미전달'이 됩니다."""
-    return gift_year(memo) == str(datetime.datetime.now(KST).year)
+def gift_given_this_year(memo: str | None, ref_year: int | None = None) -> bool:
+    """그 해(기본: 올해, KST) 쿠폰을 이미 전달했는지. 해가 바뀌면 자동으로 다시 '미전달'이 됩니다."""
+    year = ref_year or datetime.datetime.now(KST).year
+    return gift_year(memo) == str(year)
+
+
+def bible_period(d: datetime.date) -> tuple[str, str]:
+    """성경읽기 쿠폰 기준 2개월 구간 (시작일, 끝일) ISO 문자열.
+    회계연도 시작월부터 두 달씩: 12~1월, 2~3월, 4~5월, 6~7월, 8~9월, 10~11월 (시작월 설정을 따라감)."""
+    offset = (d.month - FISCAL_START_MONTH) % 12
+    start_m = (FISCAL_START_MONTH - 1 + offset - offset % 2) % 12 + 1
+    start_y = d.year if start_m <= d.month else d.year - 1
+    end_m = start_m % 12 + 1
+    end_y = start_y + (1 if start_m == 12 else 0) if end_m == 1 else start_y
+    end_y2 = start_y + (1 if end_m < start_m else 0)
+    first = datetime.date(start_y, start_m, 1)
+    nxt_m = end_m % 12 + 1
+    nxt_y = end_y2 + (1 if end_m == 12 else 0)
+    last = datetime.date(nxt_y, nxt_m, 1) - datetime.timedelta(days=1)
+    return first.isoformat(), last.isoformat()
+
+
+def bible_period_label(d: datetime.date) -> str:
+    first, last = bible_period(d)
+    return f"{int(first[5:7])}~{int(last[5:7])}월"
 
 
 def with_gift(memo: str | None, year: int | None) -> str:
@@ -1450,7 +1479,17 @@ HEADER_ALIGN_JS = """
   try { P = window.parent; var doc = P.document; } catch (e) { return; }
   if (P.__attAlignStop) { try { P.__attAlignStop(); } catch (e) {} }
 
+  function tint() {
+    try {
+      P.document.querySelectorAll('button[data-testid^="stBaseButton-pills"]').forEach(function (b) {
+        var blue = b.textContent.indexOf('🎫') >= 0;
+        b.style.filter = blue ? 'hue-rotate(190deg) saturate(1.4)' : '';
+      });
+    } catch (e) {}
+  }
+
   function align() {
+    tint();
     try {
       var doc = P.document;
       var anchors = doc.querySelectorAll('.tp-row-anchor');
@@ -2010,6 +2049,34 @@ if meeting_names:
             status_options = ["O", "△", "X"]
             salvation_map = {r["member_name"]: (r["birthday"], r["memo"]) for r in all_birthdays}
 
+            # 쿠폰 계산 기준: 구원생일 쿠폰=그 해에 한 번, 성경읽기 쿠폰=2개월 구간에 한 번
+            ref_date = datetime.date.fromisoformat(date_str)
+            bible_first, bible_last = bible_period(ref_date)
+            bible_here = {
+                str(r["이름"]) for _, r in existing_day_df.iterrows() if TAG_BIBLE in str(r["비고"] or "")
+            } if has_existing else set()
+            bible_other = set()  # 같은 구간의 다른 날짜에 이미 전달한 사람
+            if not df.empty:
+                in_period = df[(df["날짜"].astype(str) >= bible_first) & (df["날짜"].astype(str) <= bible_last)]
+                in_period = in_period[in_period["날짜"].astype(str) != date_str]
+                bible_other = {
+                    str(r["이름"]) for _, r in in_period.iterrows() if TAG_BIBLE in str(r["비고"] or "")
+                }
+
+            def sal_month_match(member_name: str) -> bool:
+                """이 모임 날짜가 그 사람의 구원생일 달이면 True (구원생일 쿠폰 대상)"""
+                bd = salvation_map.get(member_name, ("", ""))[0]
+                norm = normalize_mmdd(bd or "")
+                return bool(norm) and int(norm.split("-")[0]) == ref_date.month
+
+            def coupon_options(member_name: str) -> list:
+                opts = []
+                if sal_month_match(member_name):
+                    opts.append("s")
+                if member_name not in bible_other:
+                    opts.append("b")
+                return opts
+
             if HAS_PILLS:
                 components.html(HEADER_ALIGN_JS, height=0)
 
@@ -2020,7 +2087,7 @@ if meeting_names:
                         unsafe_allow_html=True,
                     )
                     if HAS_PILLS:
-                        h_n, h_r, h_tp = make_columns([6, 8, 5])
+                        h_n, h_r, h_tp, h_cp = make_columns([6, 8, 5, 5])
                     else:
                         h_n, h_r, h_t, h_p = make_columns([6, 8, 5, 5])
                     with h_n:
@@ -2033,6 +2100,8 @@ if meeting_names:
                     if HAS_PILLS:
                         with h_tp:
                             st.markdown(header_grid(["간증", "기도부탁"], start=3), unsafe_allow_html=True)
+                        with h_cp:
+                            st.markdown(header_grid(["쿠폰"], start=5), unsafe_allow_html=True)
                     else:
                         with h_t:
                             st.markdown(header_grid(["간증"]), unsafe_allow_html=True)
@@ -2058,6 +2127,16 @@ if meeting_names:
                                 )
                                 if flag
                             ]
+                        cp_key = f"cp_{selected_meeting}_{date_str}_{member}"
+                        if cp_key not in st.session_state:
+                            st.session_state[cp_key] = [
+                                code
+                                for code, flag in (
+                                    ("s", gift_given_this_year(salvation_map.get(member, ("", ""))[1], ref_date.year)),
+                                    ("b", member in bible_here),
+                                )
+                                if flag and code in coupon_options(member)
+                            ] or (["b"] if member in bible_other and not coupon_options(member) else [])
                     else:
                         if testimony_key not in st.session_state:
                             st.session_state[testimony_key] = existing_testimony_map.get(member, False)
@@ -2070,7 +2149,7 @@ if meeting_names:
                             unsafe_allow_html=True,
                         )
                         if HAS_PILLS:
-                            n_col, r_col, tp_col = make_columns([6, 8, 5])
+                            n_col, r_col, tp_col, cp_col = make_columns([6, 8, 5, 5])
                         else:
                             n_col, r_col, t_col, p_col = make_columns([6, 8, 5, 5])
 
@@ -2078,9 +2157,11 @@ if meeting_names:
                             sal_text = format_salvation_date(*salvation_map.get(member, ("", "")))
                             gift_mark = (
                                 f" {GIFT_ICON}"
-                                if gift_given_this_year(salvation_map.get(member, ("", ""))[1])
+                                if gift_given_this_year(salvation_map.get(member, ("", ""))[1], ref_date.year)
                                 else ""
                             )
+                            if member in bible_other or member in bible_here:
+                                gift_mark += f" {BIBLE_HTML}"
                             sal_html = (
                                 f"({sal_text}){gift_mark}"
                                 if sal_text
@@ -2125,6 +2206,16 @@ if meeting_names:
                                     format_func=lambda code: TP_ICONS[code],
                                     key=tp_key,
                                     label_visibility="collapsed",
+                                )
+                            with cp_col:
+                                st.pills(
+                                    f"{member} 쿠폰",
+                                    options=coupon_options(member) or ["b"],
+                                    selection_mode="multi",
+                                    format_func=lambda code: CP_ICONS[code],
+                                    key=cp_key,
+                                    label_visibility="collapsed",
+                                    disabled=not coupon_options(member),
                                 )
                         else:
                             with t_col:
@@ -2173,11 +2264,24 @@ if meeting_names:
                                     "note": build_note_with_flags(
                                         st.session_state.get(note_key, ""),
                                         *read_tp_flags(selected_meeting, date_str, member),
+                                        has_bible=(
+                                            member not in bible_other
+                                            and "b" in (st.session_state.get(f"cp_{selected_meeting}_{date_str}_{member}") or [])
+                                        ),
                                     ),
                                 }
                                 for member in member_list
                             ]
                             save_attendance_records(selected_meeting, date_str, payload, member_list)
+                            # 구원생일 쿠폰: 사람 단위(모임 무관) 정보라 구원생일 정보에 따로 기록
+                            for member in member_list:
+                                if not sal_month_match(member):
+                                    continue
+                                picked_cp = st.session_state.get(f"cp_{selected_meeting}_{date_str}_{member}") or []
+                                bday, old_memo = salvation_map[member]
+                                want = "s" in picked_cp
+                                if want != gift_given_this_year(old_memo, ref_date.year):
+                                    upsert_birthday(member, bday, with_gift(old_memo, ref_date.year if want else None))
                             att_saved = True
                         except Exception as e:
                             st.error(
