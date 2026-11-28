@@ -199,6 +199,14 @@ def apply_warm_theme() -> None:
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(n+2) {{
             border-left: 1px solid #DCCDB8;
         }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stColumn"] :is(div[data-testid="stMarkdown"], div[data-testid="stMarkdownContainer"], div.element-container) {{
+            margin: 0 !important;
+            padding: 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div:has(> button[data-testid^="stBaseButton-pills"]),
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div:has(> div > button[data-testid^="stBaseButton-pills"]) {{
+            justify-content: space-around !important;
+        }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) button[data-testid^="stBaseButton-pills"] {{
             min-height: 40px !important;
             padding: 4px 10px !important;
@@ -1051,6 +1059,16 @@ def format_salvation_date(mmdd: str | None, memo: str | None) -> str:
     return f"{m:02d}.{d:02d}"
 
 
+def header_grid(labels: list[str]) -> str:
+    """머리글 칸: 라벨을 같은 폭으로 나눠 아래 버튼 위에 가운데 정렬."""
+    cells = "".join(f"<span>{html.escape(lb)}</span>" for lb in labels)
+    return (
+        f"<div style='display:grid; grid-template-columns:repeat({len(labels)}, 1fr); "
+        "justify-items:center; font-size:0.7rem; font-weight:600; color:#8A7A6C; "
+        f"letter-spacing:-0.02em; white-space:nowrap;'>{cells}</div>"
+    )
+
+
 def make_columns(spec: list):
     """칸 내용을 세로 가운데로 정렬하는 columns (지원하지 않는 Streamlit 버전이면 기본 columns)."""
     try:
@@ -1488,7 +1506,31 @@ if meeting_names:
             salvation_map = {r["member_name"]: (r["birthday"], r["memo"]) for r in all_birthdays}
 
             with st.form(key=f"att_form_{selected_meeting}_{date_str}"):
-                st.caption(f"{EMOJI_TESTIMONY} 간증 · {EMOJI_PRAYER} 기도부탁 — 선택 후 맨 아래 저장")
+                with st.container():
+                    st.markdown(
+                        "<div class='tp-row-anchor' style='height:0; margin:0; padding:0; line-height:0;'></div>",
+                        unsafe_allow_html=True,
+                    )
+                    if HAS_PILLS:
+                        h_n, h_r, h_tp = make_columns([6, 8, 5])
+                    else:
+                        h_n, h_r, h_t, h_p = make_columns([6, 8, 5, 5])
+                    with h_n:
+                        st.markdown(
+                            "<div style='font-size:0.7rem; font-weight:600; color:#8A7A6C; padding-left:2px;'>이름</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with h_r:
+                        st.markdown(header_grid(["참석", "지각", "불참"]), unsafe_allow_html=True)
+                    if HAS_PILLS:
+                        with h_tp:
+                            st.markdown(header_grid(["간증", "기도부탁"]), unsafe_allow_html=True)
+                    else:
+                        with h_t:
+                            st.markdown(header_grid(["간증"]), unsafe_allow_html=True)
+                        with h_p:
+                            st.markdown(header_grid(["기도부탁"]), unsafe_allow_html=True)
+
                 for member in member_list:
                     radio_key = f"radio_{selected_meeting}_{date_str}_{member}"
                     testimony_key = f"testimony_{selected_meeting}_{date_str}_{member}"
@@ -1530,7 +1572,8 @@ if meeting_names:
                                 else "<span style='color:#B9AC9D;'>(미등록)</span>"
                             )
                             st.markdown(
-                                "<div style='line-height:1.25; word-break:keep-all;'>"
+                                "<div style='display:flex; flex-direction:column; justify-content:center; "
+                                "min-height:40px; line-height:1.25; word-break:keep-all;'>"
                                 "<div style='font-weight:700; font-size:0.9rem;'>"
                                 f"🍃 {html.escape(member_label(member))}</div>"
                                 "<div style='font-size:0.74rem; color:#8A7A6C; margin:2px 0 0 1.35rem;'>"
