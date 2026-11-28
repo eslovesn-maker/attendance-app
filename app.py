@@ -167,7 +167,7 @@ def apply_warm_theme() -> None:
 
         /* 출석 입력 행: 세로(모바일) 화면에서도 O△X + 간증/기도부탁 아이콘을 한 줄에 표시 */
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) {{
-            gap: 0.3rem !important;
+            gap: 0 !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
@@ -183,7 +183,7 @@ def apply_warm_theme() -> None:
             display: flex !important;
             flex-direction: column !important;
             justify-content: center !important;
-            min-height: 54px;
+            min-height: 50px;
             padding: 0 8px !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(n+2) {{
@@ -192,8 +192,19 @@ def apply_warm_theme() -> None:
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {{
             align-items: center !important;
         }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] {{
+            flex: 1 1 auto !important;
+            justify-content: center !important;
+            gap: 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) :is(div[data-testid="stRadio"], div[data-testid="stPills"]) > div[data-testid="stWidgetLabel"] {{
+            display: none !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] {{
+            margin: 0 !important;
+        }}
         div[data-testid="stForm"] div[data-testid="stVerticalBlock"] {{
-            gap: 0.5rem !important;
+            gap: 0.3rem !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] label p {{
             margin: 0 !important;
