@@ -1450,9 +1450,10 @@ SWIPE_TABS_JS = """
 
   var STOP_AT = '[data-testid="stMain"],[data-testid="stAppViewContainer"],section.main,.main';
   var NO_SWIPE = 'input,textarea,select,[role="slider"],[data-baseweb="slider"],' +
-    '[data-testid="stDataFrame"],[data-baseweb="tab-list"],[data-testid="stSidebar"],' +
+    '[data-testid="stDataFrame"],[data-baseweb="tab-list"],[role="tablist"],[data-testid="stSidebar"],' +
     'canvas,[data-baseweb="popover"],[role="listbox"],[data-testid="stDialog"]';
-  var TAB_SEL = '[data-baseweb="tab-list"] button[role="tab"]';
+  // 버전에 따라 탭이 button 이거나 div 입니다. role 로 찾으면 둘 다 잡힙니다.
+  var TAB_SEL = '[role="tablist"] [role="tab"], [data-baseweb="tab-list"] [role="tab"]';
 
   // 옆으로 스크롤되는 영역(표, 날짜 칩 등)에서 시작한 스와이프는 탭 이동에 쓰지 않음
   function scrollableX(el) {
