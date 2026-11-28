@@ -597,6 +597,38 @@ def normalize_mmdd(raw_val: str) -> str | None:
     return None
 
 
+def parse_salvation_input(raw: str) -> tuple[str | None, int | None]:
+    """'1994-12-11' · '1994.12.11' · '1994년 12월 11일' · '19941211' · '12-11' -> ('12-11', 1994|None)"""
+    text = str(raw or "").strip()
+    if not text:
+        return None, None
+    year = None
+    compact = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", text)
+    if compact:
+        year, m, d = int(compact[1]), int(compact[2]), int(compact[3])
+    else:
+        nums = re.findall(r"\d+", text)
+        if len(nums) == 3 and len(nums[0]) == 4:
+            year, m, d = int(nums[0]), int(nums[1]), int(nums[2])
+        elif len(nums) == 2:
+            m, d = int(nums[0]), int(nums[1])
+        else:
+            return None, None
+    if year is not None and not (1900 <= year <= datetime.datetime.now(KST).year):
+        return None, None
+    try:
+        datetime.date(year or 2000, m, d)  # 연도가 없으면 윤년(2000) 기준이라 2/29도 허용
+    except ValueError:
+        return None, None
+    return f"{m:02d}-{d:02d}", year
+
+
+def extract_year(memo: str | None) -> str:
+    """메모에 적어 둔 4자리 연도(1900~2099)를 반환. 없으면 빈 문자열."""
+    found = re.search(r"(?:19|20)\d{2}", str(memo or ""))
+    return found.group(0) if found else ""
+
+
 def days_until_birthday(mmdd: str, today: datetime.date) -> int | None:
     norm = normalize_mmdd(mmdd)
     if not norm:
@@ -1128,8 +1160,6 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
             continue
         m, d = map(int, item["birthday"].split("-"))
         label = f"{member_label(item['member_name'])} ({m}월 {d}일)"
-        if item["memo"]:
-            label += f" - {item['memo']}"
 
         if diff == 0:
             today_list.append(label)
@@ -1204,10 +1234,8 @@ def format_salvation_date(mmdd: str | None, memo: str | None) -> str:
     if not norm:
         return ""
     m, d = map(int, norm.split("-"))
-    year_match = re.search(r"(?:19|20)\d{2}", str(memo or ""))
-    if year_match:
-        return f"{year_match.group(0)}.{m:02d}.{d:02d}"
-    return f"{m:02d}.{d:02d}"
+    year = extract_year(memo)
+    return f"{year}.{m:02d}.{d:02d}" if year else f"{m:02d}.{d:02d}"
 
 
 def header_grid(labels: list[str], start: int = 0) -> str:
@@ -1273,10 +1301,10 @@ HEADER_ALIGN_JS = """
 """
 
 
-def make_columns(spec: list):
-    """칸 내용을 세로 가운데로 정렬하는 columns (지원하지 않는 Streamlit 버전이면 기본 columns)."""
+def make_columns(spec: list, alignment: str = "center"):
+    """칸 내용을 세로로 정렬하는 columns (지원하지 않는 Streamlit 버전이면 기본 columns)."""
     try:
-        return st.columns(spec, vertical_alignment="center")
+        return st.columns(spec, vertical_alignment=alignment)
     except TypeError:
         return st.columns(spec)
 
@@ -2015,42 +2043,41 @@ if meeting_names:
                 format_func=member_label,
             )
             existing_b = next((r for r in all_birthdays if r["member_name"] == b_name), None)
-            default_raw = existing_b["birthday"] if existing_b else ""
-            default_memo = existing_b["memo"] if existing_b else ""
+            default_text = (
+                format_salvation_date(existing_b["birthday"], existing_b["memo"]) if existing_b else ""
+            )
             if existing_b:
-                st.caption(f"현재 저장된 구원생일: {default_raw}")
+                st.caption(f"현재 저장된 구원생일: {default_text}")
 
             with st.form(key="global_birthday_form"):
-                c2, c3 = st.columns([2, 3])
-                with c2:
+                c_in, c_btn = make_columns([3, 2], alignment="bottom")
+                with c_in:
                     b_raw = st.text_input(
-                        "구원생일 (월-일)",
-                        value=default_raw,
-                        placeholder="예: 03-15 또는 3/15",
+                        "구원생일 (년-월-일)",
+                        value=default_text,
+                        placeholder="예: 1994-12-11",
                         key=f"bday_raw_{b_name}",
                     )
-                with c3:
-                    b_memo = st.text_input(
-                        "메모 (선택)",
-                        value=default_memo,
-                        placeholder="예: 음력/양력 또는 소속",
-                        key=f"bday_memo_{b_name}",
-                    )
+                with c_btn:
+                    b_save = st.form_submit_button("🎂 구원생일 저장")
 
-                b_save = st.form_submit_button("🎂 구원생일 저장")
                 if b_save:
-                    norm_bday = normalize_mmdd(b_raw)
+                    norm_bday, birth_year = parse_salvation_input(b_raw)
                     if not norm_bday:
-                        st.warning("구원생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
+                        st.warning("구원생일을 '1994-12-11' 또는 '12-11'처럼 입력해 주세요. (날짜가 올바른지 확인해 주세요)")
                     else:
+                        # 연도는 기존 방식대로 메모 칸에 저장 (연도를 쓰지 않으면 기존 값을 유지)
+                        memo_to_save = str(birth_year) if birth_year else (existing_b["memo"] if existing_b else "")
                         bday_saved = False
                         try:
-                            upsert_birthday(b_name, norm_bday, b_memo)
+                            upsert_birthday(b_name, norm_bday, memo_to_save)
                             bday_saved = True
                         except Exception as e:
                             st.error(f"구원생일을 저장하지 못했습니다: {e}")
                         if bday_saved:
-                            st.success(f"'{member_label(b_name)}'님의 구원생일({norm_bday})이 전체 구원생일 명단에 저장되었습니다!")
+                            st.success(
+                                f"'{member_label(b_name)}'님의 구원생일({format_salvation_date(norm_bday, memo_to_save)})이 저장되었습니다!"
+                            )
                             st.rerun()
 
         st.markdown("---")
@@ -2072,12 +2099,12 @@ if meeting_names:
                     entries = sorted(monthly_groups[m], key=lambda x: x[0])
                     if entries:
                         for d_num, name, memo in entries:
-                            memo_html = (
-                                f" <span style='color:#8A7A6C;'>({html.escape(memo)})</span>" if memo else ""
-                            )
+                            year_txt = extract_year(memo)
+                            year_html = f" · {year_txt}" if year_txt else ""
                             st.markdown(
-                                "<div style='white-space:nowrap; overflow-x:auto; font-size:0.82rem; line-height:1.7;'>"
-                                f"• <b>{html.escape(member_label(name))}</b> {d_num}일{memo_html}</div>",
+                                "<div style='font-size:0.8rem; line-height:1.45; margin-bottom:6px; word-break:keep-all;'>"
+                                f"<b>{html.escape(member_label(name))}</b><br>"
+                                f"<span style='color:#8A7A6C;'>{d_num}일{year_html}</span></div>",
                                 unsafe_allow_html=True,
                             )
                     else:
@@ -2090,8 +2117,7 @@ if meeting_names:
                     [
                         {
                             "이름": member_label(r["member_name"]),
-                            "구원생일(MM-DD)": r["birthday"],
-                            "메모": r["memo"],
+                            "구원생일": format_salvation_date(r["birthday"], r["memo"]),
                         }
                         for r in all_birthdays
                     ]
