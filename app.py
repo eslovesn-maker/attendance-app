@@ -658,6 +658,29 @@ def join_memo(year, text: str) -> str:
     return f"{year_txt}|{text}" if text else year_txt
 
 
+GIFT_ICON = "🎟️"  # 교회 쿠폰
+
+
+def gift_year(memo: str | None) -> str:
+    """쿠폰을 전달한 해(예: '2026'). 전달 기록이 없으면 빈 문자열. memo 칸에 'G2026' 로 저장."""
+    found = re.search(r"G((?:19|20)\d{2})", split_memo(memo)[1])
+    return found.group(1) if found else ""
+
+
+def gift_given_this_year(memo: str | None) -> bool:
+    """올해(KST) 쿠폰을 이미 전달했는지. 해가 바뀌면 자동으로 다시 '미전달'이 됩니다."""
+    return gift_year(memo) == str(datetime.datetime.now(KST).year)
+
+
+def with_gift(memo: str | None, year: int | None) -> str:
+    """memo 칸 값에서 쿠폰 전달 기록만 바꾼 새 값 (연도 등 나머지는 유지). year=None 이면 전달 취소."""
+    y, text = split_memo(memo)
+    text = re.sub(r"G(?:19|20)\d{2}", "", text).strip()
+    if year:
+        text = f"G{year}"
+    return join_memo(y, text)
+
+
 def extract_year(memo: str | None) -> str:
     """메모 칸에 들어 있는 4자리 연도(1900~2099)를 반환. 없으면 빈 문자열."""
     return split_memo(memo)[0]
@@ -2053,8 +2076,13 @@ if meeting_names:
 
                         with n_col:
                             sal_text = format_salvation_date(*salvation_map.get(member, ("", "")))
+                            gift_mark = (
+                                f" {GIFT_ICON}"
+                                if gift_given_this_year(salvation_map.get(member, ("", ""))[1])
+                                else ""
+                            )
                             sal_html = (
-                                f"({sal_text})"
+                                f"({sal_text}){gift_mark}"
                                 if sal_text
                                 else "<span style='color:#B9AC9D;'>(미등록)</span>"
                             )
@@ -2186,9 +2214,14 @@ if meeting_names:
             if existing_b:
                 st.caption(f"현재 저장된 구원생일: {default_text}")
 
-            existing_year, existing_memo_text = split_memo(existing_b["memo"]) if existing_b else ("", "")
+            existing_year = split_memo(existing_b["memo"])[0] if existing_b else ""
+            gift_done = bool(existing_b) and gift_given_this_year(existing_b["memo"])
+            this_year = datetime.datetime.now(KST).year
+            if existing_b and gift_done:
+                st.caption(f"{GIFT_ICON} {this_year}년 쿠폰 전달 완료")
+
             with st.form(key="global_birthday_form"):
-                c_in, c_memo, c_btn = make_columns([1.3, 2.7, 1.5], alignment="bottom")
+                c_in, c_btn, c_gift = make_columns([1.3, 1.2, 1.5], alignment="bottom")
                 with c_in:
                     b_raw = st.text_input(
                         "구원생일",
@@ -2196,23 +2229,21 @@ if meeting_names:
                         placeholder="1994-12-11",
                         key=f"bday_raw_{b_name}",
                     )
-                with c_memo:
-                    b_memo = st.text_input(
-                        "메모 (선택)",
-                        value=existing_memo_text,
-                        placeholder="예: 구원생일 선물 전달",
-                        key=f"bday_memo_{b_name}",
-                    )
                 with c_btn:
                     b_save = st.form_submit_button("🎂 저장")
+                with c_gift:
+                    b_gift = st.form_submit_button(
+                        f"{GIFT_ICON} 전달 취소" if gift_done else f"{GIFT_ICON} 쿠폰 전달"
+                    )
 
                 if b_save:
                     norm_bday, birth_year = parse_salvation_input(b_raw)
                     if not norm_bday:
                         st.warning("구원생일을 '1994-12-11' 또는 '12-11'처럼 입력해 주세요. (날짜가 올바른지 확인해 주세요)")
                     else:
-                        # 연도와 메모 글을 한 칸에 함께 저장 (연도를 쓰지 않으면 기존 연도를 유지)
-                        memo_to_save = join_memo(birth_year or existing_year, b_memo)
+                        # 연도(와 쿠폰 전달 기록)는 memo 칸에 함께 저장. 연도를 쓰지 않으면 기존 연도 유지
+                        old_memo = existing_b["memo"] if existing_b else ""
+                        memo_to_save = join_memo(birth_year or existing_year, split_memo(old_memo)[1])
                         bday_saved = False
                         try:
                             upsert_birthday(b_name, norm_bday, memo_to_save)
@@ -2225,9 +2256,27 @@ if meeting_names:
                             )
                             st.rerun()
 
+                if b_gift:
+                    if not existing_b:
+                        st.warning("먼저 구원생일을 저장해 주세요.")
+                    else:
+                        gift_saved = False
+                        try:
+                            upsert_birthday(
+                                b_name,
+                                existing_b["birthday"],
+                                with_gift(existing_b["memo"], None if gift_done else this_year),
+                            )
+                            gift_saved = True
+                        except Exception as e:
+                            st.error(f"쿠폰 전달을 저장하지 못했습니다: {e}")
+                        if gift_saved:
+                            st.rerun()
+
         st.markdown("---")
         st.write("### 🗓️ 1월 ~ 12월 구원생일 모아보기")
 
+        this_year_label = f"{datetime.datetime.now(KST).year}년"
         monthly_groups = {m: [] for m in range(1, 13)}
         for row in all_birthdays:
             m_num, d_num = map(int, row["birthday"].split("-"))
@@ -2244,10 +2293,10 @@ if meeting_names:
                     entries = sorted(monthly_groups[m], key=lambda x: x[0])
                     if entries:
                         for d_num, name, memo in entries:
-                            year_txt, memo_txt = split_memo(memo)
+                            year_txt = split_memo(memo)[0]
                             date_txt = f"{d_num}일" + (f"·{year_txt}" if year_txt else "")
-                            memo_mark = " 📝" if memo_txt else ""
-                            tip = html.escape(memo_txt, quote=True)
+                            memo_mark = f" {GIFT_ICON}" if gift_given_this_year(memo) else ""
+                            tip = f"{this_year_label} 쿠폰 전달 완료" if memo_mark else ""
                             # 이름과 날짜를 한 줄에: 이름이 길면 ... 으로 줄이고 날짜는 항상 보이게
                             st.markdown(
                                 f"<div title='{tip}' style='display:flex; align-items:baseline; gap:4px; "
@@ -2268,7 +2317,7 @@ if meeting_names:
                         {
                             "이름": member_label(r["member_name"]),
                             "구원생일": format_salvation_date(r["birthday"], r["memo"]),
-                            "메모": split_memo(r["memo"])[1],
+                            f"{GIFT_ICON} 올해 쿠폰": "전달 완료" if gift_given_this_year(r["memo"]) else "",
                         }
                         for r in all_birthdays
                     ]
