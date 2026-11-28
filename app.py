@@ -1078,18 +1078,67 @@ def format_salvation_date(mmdd: str | None, memo: str | None) -> str:
     return f"{m:02d}.{d:02d}"
 
 
-def header_grid(labels: list[str]) -> str:
-    """머리글 칸: 라벨을 같은 폭으로 나눠 아래 버튼 위에 가운데 정렬."""
+def header_grid(labels: list[str], start: int = 0) -> str:
+    """머리글 칸: 라벨을 같은 폭으로 나눠 아래 버튼 위에 가운데 정렬.
+    data-hi 번호는 아래 정렬 스크립트가 같은 번호의 버튼 위치를 찾는 데 씁니다."""
     cells = "".join(
         "<span style='flex:0 0 var(--cell); width:var(--cell); display:flex; "
         "justify-content:center; align-items:center; white-space:nowrap; overflow:visible;'>"
-        f"<span style='flex:0 0 auto;'>{html.escape(lb)}</span></span>"
-        for lb in labels
+        f"<span data-hi='{start + i}' style='flex:0 0 auto; display:inline-block;'>{html.escape(lb)}</span></span>"
+        for i, lb in enumerate(labels)
     )
     return (
         "<div style='display:flex; justify-content:center; width:100%; font-size:0.7rem; "
         f"font-weight:600; color:#8A7A6C; letter-spacing:-0.03em;'>{cells}</div>"
     )
+
+
+HEADER_ALIGN_JS = """
+<script>
+(function () {
+  var P;
+  try { P = window.parent; var doc = P.document; } catch (e) { return; }
+  if (P.__attAlignStop) { try { P.__attAlignStop(); } catch (e) {} }
+
+  function align() {
+    try {
+      var doc = P.document;
+      var anchors = doc.querySelectorAll('.tp-row-anchor');
+      if (anchors.length < 2) return;
+      var row = anchors[1].closest('div[data-testid="stVerticalBlock"]');
+      if (!row) return;
+      var btns = row.querySelectorAll('button[data-testid^="stBaseButton-pills"], div[data-testid="stButtonGroup"] button');
+      var labels = doc.querySelectorAll('[data-hi]');
+      if (!btns.length || !labels.length) return;
+      labels.forEach(function (lb) { lb.style.transform = 'none'; });
+      labels.forEach(function (lb) {
+        var i = parseInt(lb.getAttribute('data-hi'), 10);
+        var b = btns[i];
+        if (!b) return;
+        var br = b.getBoundingClientRect();
+        var lr = lb.getBoundingClientRect();
+        var dx = (br.left + br.width / 2) - (lr.left + lr.width / 2);
+        if (Math.abs(dx) > 0.5) lb.style.transform = 'translateX(' + dx.toFixed(1) + 'px)';
+      });
+    } catch (e) {}
+  }
+
+  var timer = null;
+  function schedule() { clearTimeout(timer); timer = setTimeout(align, 80); }
+  var obs = new P.MutationObserver(schedule);
+  obs.observe(P.document.body, { childList: true, subtree: true });
+  P.addEventListener('resize', schedule);
+  P.__attAlignStop = function () {
+    obs.disconnect();
+    P.removeEventListener('resize', schedule);
+    clearTimeout(timer);
+  };
+  schedule();
+  setTimeout(align, 400);
+  setTimeout(align, 1200);
+})();
+</script>
+"""
 
 
 def make_columns(spec: list):
@@ -1528,6 +1577,9 @@ if meeting_names:
             prayer_checked = {}
             salvation_map = {r["member_name"]: (r["birthday"], r["memo"]) for r in all_birthdays}
 
+            if HAS_PILLS:
+                components.html(HEADER_ALIGN_JS, height=0)
+
             with st.form(key=f"att_form_{selected_meeting}_{date_str}"):
                 with st.container():
                     st.markdown(
@@ -1547,7 +1599,7 @@ if meeting_names:
                         st.markdown(header_grid(["참석", "지각", "불참"]), unsafe_allow_html=True)
                     if HAS_PILLS:
                         with h_tp:
-                            st.markdown(header_grid(["간증", "기도부탁"]), unsafe_allow_html=True)
+                            st.markdown(header_grid(["간증", "기도부탁"], start=3), unsafe_allow_html=True)
                     else:
                         with h_t:
                             st.markdown(header_grid(["간증"]), unsafe_allow_html=True)
