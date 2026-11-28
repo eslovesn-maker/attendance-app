@@ -1522,7 +1522,7 @@ HEADER_ALIGN_JS = """
 
   function tint() {
     try {
-      P.document.querySelectorAll('button[data-testid^="stBaseButton-pills"]').forEach(function (b) {
+      P.document.querySelectorAll('div[data-testid="stButtonGroup"] button').forEach(function (b) {
         var blue = b.textContent.indexOf('🎫') >= 0;
         b.style.filter = blue ? 'hue-rotate(190deg) saturate(1.4)' : '';
       });
@@ -1553,6 +1553,19 @@ HEADER_ALIGN_JS = """
     } catch (e) {}
   }
 
+  // 출석(참석·지각·불참) 버튼: 이미 선택된 버튼을 다시 눌러도 선택이 풀리지 않게 막음
+  function guard(e) {
+    try {
+      var b = e.target && e.target.closest ? e.target.closest('div[data-testid="stButtonGroup"] button') : null;
+      if (!b || !b.parentElement) return;
+      if (b.parentElement.querySelectorAll('button').length === 3 && b.getAttribute('aria-checked') === 'true') {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    } catch (err) {}
+  }
+  P.document.addEventListener('click', guard, true);
+
   var timer = null;
   function schedule() { clearTimeout(timer); timer = setTimeout(align, 80); }
   var obs = new P.MutationObserver(schedule);
@@ -1560,6 +1573,7 @@ HEADER_ALIGN_JS = """
   P.addEventListener('resize', schedule);
   P.__attAlignStop = function () {
     obs.disconnect();
+    try { P.document.removeEventListener('click', guard, true); } catch (e) {}
     P.removeEventListener('resize', schedule);
     clearTimeout(timer);
   };
