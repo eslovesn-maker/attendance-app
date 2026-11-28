@@ -173,13 +173,31 @@ def apply_warm_theme() -> None:
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            gap: 6px !important;
-            align-items: center !important;
+            gap: 0 !important;
+            align-items: stretch !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             width: auto !important;
             min-width: 0 !important;
             flex: 5 1 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            min-height: 54px;
+            padding: 0 8px !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(n+2) {{
+            border-left: 1px solid #DCCDB8;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {{
+            align-items: center !important;
+        }}
+        div[data-testid="stForm"] div[data-testid="stVerticalBlock"] {{
+            gap: 0.5rem !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] label p {{
+            margin: 0 !important;
+            line-height: 1.2 !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {{
             flex: 6 1 0 !important;
@@ -1459,10 +1477,7 @@ if meeting_names:
             prayer_checked = {}
 
             with st.form(key=f"att_form_{selected_meeting}_{date_str}"):
-                st.caption(
-                    f"{EMOJI_TESTIMONY} 간증 · {EMOJI_PRAYER} 기도부탁 (눌러서 선택, 다시 누르면 해제) — "
-                    "체크 후 맨 아래 '출석 기록 저장하기'를 눌러야 저장됩니다."
-                )
+                st.caption(f"{EMOJI_TESTIMONY} 간증 · {EMOJI_PRAYER} 기도부탁 — 선택 후 맨 아래 저장")
                 for member in member_list:
                     radio_key = f"radio_{selected_meeting}_{date_str}_{member}"
                     testimony_key = f"testimony_{selected_meeting}_{date_str}_{member}"
@@ -1532,7 +1547,7 @@ if meeting_names:
                                     key=prayer_key,
                                     help="기도부탁",
                                 )
-                    st.markdown("<hr style='margin:8px 0 6px 0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
+                    st.markdown("<hr style='margin:0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
 
                 note_key = f"note_{selected_meeting}_{date_str}"
                 if note_key not in st.session_state:
