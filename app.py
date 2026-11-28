@@ -2245,14 +2245,16 @@ if meeting_names:
                     if entries:
                         for d_num, name, memo in entries:
                             year_txt, memo_txt = split_memo(memo)
-                            year_html = f" · {year_txt}" if year_txt else ""
-                            memo_html = (
-                                f"<br><span style='color:#B0643F;'>📝 {html.escape(memo_txt)}</span>" if memo_txt else ""
-                            )
+                            date_txt = f"{d_num}일" + (f"·{year_txt}" if year_txt else "")
+                            memo_mark = " 📝" if memo_txt else ""
+                            tip = html.escape(memo_txt, quote=True)
+                            # 이름과 날짜를 한 줄에: 이름이 길면 ... 으로 줄이고 날짜는 항상 보이게
                             st.markdown(
-                                "<div style='font-size:0.8rem; line-height:1.45; margin-bottom:6px; word-break:keep-all;'>"
-                                f"<b>{html.escape(member_label(name))}</b><br>"
-                                f"<span style='color:#8A7A6C;'>{d_num}일{year_html}</span>{memo_html}</div>",
+                                f"<div title='{tip}' style='display:flex; align-items:baseline; gap:4px; "
+                                "font-size:clamp(0.66rem, 1.9vw, 0.8rem); line-height:1.5; margin-bottom:4px; white-space:nowrap;'>"
+                                f"<b style='flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;'>"
+                                f"{html.escape(member_label(name))}</b>"
+                                f"<span style='flex:0 0 auto; color:#8A7A6C;'>{date_txt}{memo_mark}</span></div>",
                                 unsafe_allow_html=True,
                             )
                     else:
