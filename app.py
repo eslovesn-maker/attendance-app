@@ -1301,6 +1301,70 @@ HEADER_ALIGN_JS = """
 """
 
 
+SWIPE_TABS_JS = """
+<script>
+(function () {
+  var P;
+  try { P = window.parent; P.document; } catch (e) { return; }
+  if (P.__attSwipeStop) { try { P.__attSwipeStop(); } catch (e) {} }
+  var doc = P.document;
+  var sx = 0, sy = 0, t0 = 0, ok = false;
+
+  var STOP_AT = '[data-testid="stMain"],[data-testid="stAppViewContainer"],section.main,.main';
+  var NO_SWIPE = 'input,textarea,select,[role="slider"],[data-baseweb="slider"],' +
+    '[data-testid="stDataFrame"],[data-baseweb="tab-list"],[data-testid="stSidebar"],' +
+    'canvas,[data-baseweb="popover"],[role="listbox"]';
+
+  // 옆으로 스크롤되는 영역(표, 날짜 칩 등) 안에서 시작한 스와이프는 탭 이동에 쓰지 않음
+  function scrollableX(el) {
+    while (el && el !== doc.body) {
+      if (el.matches && el.matches(STOP_AT)) break;
+      var ox = P.getComputedStyle(el).overflowX;
+      if ((ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 2) return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+  function blocked(t) {
+    if (!t || !t.closest) return true;
+    if (t.closest(NO_SWIPE)) return true;
+    return scrollableX(t);
+  }
+  function onStart(e) {
+    if (!e.touches || e.touches.length !== 1) { ok = false; return; }
+    var t = e.touches[0];
+    sx = t.clientX; sy = t.clientY; t0 = Date.now();
+    ok = !blocked(e.target);
+  }
+  function onEnd(e) {
+    if (!ok) return;
+    ok = false;
+    var t = e.changedTouches && e.changedTouches[0];
+    if (!t || Date.now() - t0 > 800) return;
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+    var tabs = Array.prototype.slice.call(
+      doc.querySelectorAll('[data-baseweb="tab-list"] button[role="tab"]'));
+    if (tabs.length < 2) return;
+    var cur = -1;
+    tabs.forEach(function (b, i) { if (b.getAttribute('aria-selected') === 'true') cur = i; });
+    if (cur < 0) return;
+    var next = cur + (dx < 0 ? 1 : -1);
+    if (next < 0 || next >= tabs.length) return;
+    tabs[next].click();
+    try { tabs[next].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (_) {}
+  }
+  doc.addEventListener('touchstart', onStart, { passive: true });
+  doc.addEventListener('touchend', onEnd, { passive: true });
+  P.__attSwipeStop = function () {
+    doc.removeEventListener('touchstart', onStart);
+    doc.removeEventListener('touchend', onEnd);
+  };
+})();
+</script>
+"""
+
+
 def make_columns(spec: list, alignment: str = "center"):
     """칸 내용을 세로로 정렬하는 columns (지원하지 않는 Streamlit 버전이면 기본 columns)."""
     try:
@@ -1554,6 +1618,7 @@ if meeting_names:
     tab1, tab2, tab3, tab4 = st.tabs(
         ["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 구원생일", "👥 전체 인원"]
     )
+    components.html(SWIPE_TABS_JS, height=0)  # 좌우 스와이프로 탭 이동
 
     with tab1:
         st.subheader(f"☀️ '{selected_meeting}' 모임 출석 입력")
