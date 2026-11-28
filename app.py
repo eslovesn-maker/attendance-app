@@ -279,28 +279,17 @@ def apply_warm_theme() -> None:
             border-color: #D49377;
         }}
 
-        /* 연간 현황 패널: 오른쪽에서 끌려 나오는 모양 (스와이프 트리거 버튼은 숨김) */
-        .st-key-open_stats_drawer {{
-            display: none !important;
+        /* 탭이 바뀔 때 새 화면이 옆에서 밀려 들어오는 애니메이션
+           (--att-slide-from: 스와이프 스크립트가 방향에 따라 36px / -36px 로 바꿔 줌) */
+        div[data-testid="stMain"], section.main {{
+            overflow-x: hidden;
         }}
-        div[data-testid="stDialog"] div[role="dialog"] {{
-            position: fixed !important;
-            top: 0 !important;
-            right: 0 !important;
-            bottom: 0 !important;
-            left: auto !important;
-            margin: 0 !important;
-            height: 100dvh !important;
-            max-height: 100dvh !important;
-            width: min(94vw, 760px) !important;
-            max-width: none !important;
-            border-radius: 18px 0 0 18px !important;
-            overflow-y: auto !important;
-            animation: attSlideIn 0.28s ease-out;
+        div[role="tabpanel"], div[data-baseweb="tab-panel"] {{
+            animation: attTabSlide 0.28s ease-out;
         }}
-        @keyframes attSlideIn {{
-            from {{ transform: translateX(100%); }}
-            to {{ transform: translateX(0); }}
+        @keyframes attTabSlide {{
+            from {{ opacity: 0; transform: translateX(var(--att-slide-from, 24px)); }}
+            to {{ opacity: 1; transform: translateX(0); }}
         }}
 
         /* 세로 모드(모바일 / 좁은 화면) 최적화 */
@@ -1333,14 +1322,6 @@ def render_stats_view(
             )
 
 
-HAS_DIALOG = hasattr(st, "dialog")
-if HAS_DIALOG:
-
-    @st.dialog("📈 연간 출석 현황 및 추이", width="large")
-    def stats_drawer(selected_meeting: str, df: pd.DataFrame, member_list: list) -> None:
-        render_stats_view(selected_meeting, df, member_list, key_prefix="drawer_", show_title=False)
-
-
 def _set_selection(key: str, values: list[str]) -> None:
     st.session_state[key] = list(values)
 
@@ -1458,7 +1439,7 @@ HEADER_ALIGN_JS = """
 """
 
 
-SWIPE_DRAWER_JS = """
+SWIPE_TABS_JS = """
 <script>
 (function () {
   var P;
@@ -1470,8 +1451,10 @@ SWIPE_DRAWER_JS = """
   var STOP_AT = '[data-testid="stMain"],[data-testid="stAppViewContainer"],section.main,.main';
   var NO_SWIPE = 'input,textarea,select,[role="slider"],[data-baseweb="slider"],' +
     '[data-testid="stDataFrame"],[data-baseweb="tab-list"],[data-testid="stSidebar"],' +
-    'canvas,[data-baseweb="popover"],[role="listbox"]';
+    'canvas,[data-baseweb="popover"],[role="listbox"],[data-testid="stDialog"]';
+  var TAB_SEL = '[data-baseweb="tab-list"] button[role="tab"]';
 
+  // 옆으로 스크롤되는 영역(표, 날짜 칩 등)에서 시작한 스와이프는 탭 이동에 쓰지 않음
   function scrollableX(el) {
     while (el && el !== doc.body) {
       if (el.matches && el.matches(STOP_AT)) break;
@@ -1486,20 +1469,17 @@ SWIPE_DRAWER_JS = """
     if (t.closest(NO_SWIPE)) return true;
     return scrollableX(t);
   }
-  function openDialog() { return doc.querySelector('[data-testid="stDialog"]'); }
-  function firstTabSelected() {
-    var tabs = doc.querySelectorAll('[data-baseweb="tab-list"] button[role="tab"]');
-    return tabs.length > 0 && tabs[0].getAttribute('aria-selected') === 'true';
+  function tabs() { return Array.prototype.slice.call(doc.querySelectorAll(TAB_SEL)); }
+  function currentIndex(list) {
+    var cur = -1;
+    list.forEach(function (b, i) { if (b.getAttribute('aria-selected') === 'true') cur = i; });
+    return cur;
   }
-  function findTrigger() {
-    var b = doc.querySelector('.st-key-open_stats_drawer button');
-    if (b) return b;
-    var all = doc.querySelectorAll('button');
-    for (var i = 0; i < all.length; i++) {
-      if ((all[i].innerText || '').indexOf('연간 현황 열기') >= 0) return all[i];
-    }
-    return null;
+  // 새 화면이 들어오는 방향: 다음 탭이면 오른쪽에서, 이전 탭이면 왼쪽에서
+  function setDirection(forward) {
+    try { doc.documentElement.style.setProperty('--att-slide-from', forward ? '36px' : '-36px'); } catch (e) {}
   }
+
   function onStart(e) {
     if (!e.touches || e.touches.length !== 1) { ok = false; return; }
     var t = e.touches[0];
@@ -1513,26 +1493,31 @@ SWIPE_DRAWER_JS = """
     if (!t || Date.now() - t0 > 800) return;
     var dx = t.clientX - sx, dy = t.clientY - sy;
     if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
-    var dlg = openDialog();
-    if (dlg) {
-      // 열려 있으면 오른쪽으로 밀어서 닫기
-      if (dx > 0) {
-        var close = dlg.querySelector('button[aria-label="Close"]');
-        if (close) close.click();
-      }
-      return;
-    }
-    // 출석 체크 탭에서 왼쪽으로 밀면 연간 현황이 끌려 나옴
-    if (dx < 0 && firstTabSelected()) {
-      var trig = findTrigger();
-      if (trig) trig.click();
-    }
+    var list = tabs();
+    if (list.length < 2) return;
+    var cur = currentIndex(list);
+    if (cur < 0) return;
+    var next = cur + (dx < 0 ? 1 : -1);
+    if (next < 0 || next >= list.length) return;
+    setDirection(dx < 0);
+    list[next].click();
+    try { list[next].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (_) {}
+  }
+  // 위쪽 탭 이름을 직접 눌렀을 때도 방향에 맞게 애니메이션
+  function onTabClick(e) {
+    var btn = e.target && e.target.closest ? e.target.closest(TAB_SEL) : null;
+    if (!btn) return;
+    var list = tabs();
+    var idx = list.indexOf(btn), cur = currentIndex(list);
+    if (idx >= 0 && cur >= 0 && idx !== cur) setDirection(idx > cur);
   }
   doc.addEventListener('touchstart', onStart, { passive: true });
   doc.addEventListener('touchend', onEnd, { passive: true });
+  doc.addEventListener('click', onTabClick, true);
   P.__attSwipeStop = function () {
     doc.removeEventListener('touchstart', onStart);
     doc.removeEventListener('touchend', onEnd);
+    doc.removeEventListener('click', onTabClick, true);
   };
 })();
 </script>
@@ -1792,12 +1777,7 @@ if meeting_names:
     tab1, tab2, tab3, tab4 = st.tabs(
         ["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 구원생일", "👥 전체 인원"]
     )
-    if HAS_DIALOG:
-        # 출석 체크 탭에서 왼쪽으로 스와이프하면 연간 현황 패널이 옆에서 끌려 나옵니다.
-        # (스와이프 스크립트가 이 버튼을 대신 눌러 줍니다. 화면에서는 숨겨 둡니다.)
-        if st.button("📈 연간 현황 열기", key="open_stats_drawer"):
-            stats_drawer(selected_meeting, df, member_list)
-        components.html(SWIPE_DRAWER_JS, height=0)
+    components.html(SWIPE_TABS_JS, height=0)  # 좌우 스와이프로 탭 이동 (+ 전환 애니메이션)
 
     with tab1:
         st.subheader(f"☀️ '{selected_meeting}' 모임 출석 입력")
