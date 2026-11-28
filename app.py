@@ -939,20 +939,28 @@ def delete_photo_record(photo_row: dict) -> None:
 # 통계
 # ---------------------------------------------------------------------------
 # 우리 교회 한 해: 12월에 시작해 이듬해 11월에 마무리
-FISCAL_MONTH_ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+# 시작월이 바뀌면 이 숫자 하나만 고치면 됩니다. (1이면 1월~12월)
+# 시작월 이후의 달은 다음 해 연도로 셉니다. (예: 12월 시작 -> 2026-12 는 2027년도)
+FISCAL_START_MONTH = 12
+FISCAL_MONTH_ORDER = [(FISCAL_START_MONTH - 1 + i) % 12 + 1 for i in range(12)]
 
 
 def fiscal_year_series(dates) -> pd.Series:
     """날짜 -> 연도(회계연도). 12월은 다음 해 연도로 셉니다. (예: 2026-12-06 -> 2027)"""
     parsed = pd.to_datetime(pd.Series(dates).reset_index(drop=True), errors="coerce")
-    fy = parsed.dt.year + (parsed.dt.month == 12).astype(int)
+    fy = parsed.dt.year + (parsed.dt.month >= FISCAL_START_MONTH).astype(int) * (FISCAL_START_MONTH > 1)
     fy.index = pd.Series(dates).index
     return fy
 
 
 def fiscal_year_label(fy: int, with_range: bool = False) -> str:
     base = f"{fy}년도"
-    return f"{base} ({fy - 1}.12 ~ {fy}.11)" if with_range else base
+    if not with_range:
+        return base
+    end_m = (FISCAL_START_MONTH - 2) % 12 + 1
+    if FISCAL_START_MONTH == 1:
+        return f"{base} ({fy}.1 ~ {fy}.12)"
+    return f"{base} ({fy - 1}.{FISCAL_START_MONTH} ~ {fy}.{end_m})"
 
 
 def _month_frame(stat_df: pd.DataFrame) -> pd.DataFrame:
@@ -994,7 +1002,7 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.Dat
             else:
                 row_data[f"{m}월"] = symbol_map.get(status, status)
                 month_recorded_counts[m] += 1
-                if status == "O":
+                if status in ("O", "△"):  # 지각도 출석으로 계산
                     month_present_counts[m] += 1
         grid_rows.append(row_data)
 
@@ -1209,7 +1217,7 @@ def render_stats_view(
         fiscal_all = fiscal_year_series(df["날짜"])
         available_years = sorted(fiscal_all.dropna().astype(int).unique().tolist(), reverse=True)
         selected_fy = st.selectbox(
-            "🗓️ 조회 연도 필터 (12월 ~ 이듬해 11월)",
+            "🗓️ 조회 연도 필터",
             [None] + available_years,
             format_func=lambda y: "전체 연도" if y is None else fiscal_year_label(y, with_range=True),
             key=f"{key_prefix}year_filter_{selected_meeting}",
@@ -1224,7 +1232,7 @@ def render_stats_view(
         if filtered_df.empty:
             st.info(f"🍃 {selected_year_label}에 해당하는 출석 기록이 없습니다.")
         else:
-            score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
+            score_map = {"O": 1.0, "△": 1.0, "X": 0.0}  # 지각(△)도 출석으로 계산
             stat_df = filtered_df.copy()
             stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
 
@@ -1297,7 +1305,7 @@ def render_stats_view(
             st.markdown("---")
             summary_df = stat_df.groupby("이름", as_index=False).agg(
                 **{
-                    "환산 출석 점수": ("출석점수", "sum"),
+                    "출석 횟수": ("출석점수", "sum"),
                     "간증 횟수": ("간증여부", "sum"),
                     "기도부탁 횟수": ("기도부탁여부", "sum"),
                 }
@@ -1305,9 +1313,9 @@ def render_stats_view(
 
             total_meetings = stat_df["날짜"].nunique()
             summary_df["총 모임 수"] = total_meetings
-            summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
+            summary_df["출석률(%)"] = (summary_df["출석 횟수"] / total_meetings * 100).round(1)
             summary_df = summary_df[
-                ["이름", "환산 출석 점수", "총 모임 수", "출석률(%)", "간증 횟수", "기도부탁 횟수"]
+                ["이름", "출석 횟수", "총 모임 수", "출석률(%)", "간증 횟수", "기도부탁 횟수"]
             ]
 
             st.write("### 📋 멤버별 누적 출석 · 간증 · 기도부탁 통계")
