@@ -203,9 +203,18 @@ def apply_warm_theme() -> None:
             margin: 0 !important;
             padding: 0 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div:has(> button[data-testid^="stBaseButton-pills"]),
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div:has(> div > button[data-testid^="stBaseButton-pills"]) {{
-            justify-content: space-around !important;
+        /* 아이콘 버튼 묶음: 칸 전체 폭을 같은 간격으로 나눠 가운데 정렬 (머리글과 같은 격자) */
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) :is(div.element-container, div[data-testid="stElementContainer"], div[data-testid="stPills"]):has(div[data-testid="stButtonGroup"]) {{
+            width: 100% !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stButtonGroup"] {{
+            display: grid !important;
+            grid-auto-flow: column !important;
+            grid-auto-columns: 1fr !important;
+            justify-items: center !important;
+            align-items: center !important;
+            gap: 0 !important;
+            width: 100% !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) button[data-testid^="stBaseButton-pills"] {{
             min-height: 40px !important;
