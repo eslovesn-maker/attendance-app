@@ -901,7 +901,7 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
         if diff is None:
             continue
         m, d = map(int, item["birthday"].split("-"))
-        label = f"{item['member_name']} ({m}월 {d}일)"
+        label = f"{member_label(item['member_name'])} ({m}월 {d}일)"
         if item["memo"]:
             label += f" - {item['memo']}"
 
@@ -959,6 +959,32 @@ def member_label(name: str) -> str:
     age = calc_age(master_years.get(name))
     return f"{name} ({age}세)" if age is not None else name
 
+
+def with_age_names(df: pd.DataFrame, col: str = "이름") -> pd.DataFrame:
+    """화면 표시용: 이름 열을 '이름 (나이세)' 형태로 바꾼 복사본 반환."""
+    if col not in df.columns:
+        return df
+    out = df.copy()
+    out[col] = out[col].map(lambda n: member_label(n) if isinstance(n, str) else n)
+    return out
+
+
+if st.session_state.pop("_reset_new_meeting", False):
+    st.session_state["new_meeting_members"] = []
+st.session_state["new_meeting_members"] = [
+    m for m in st.session_state.get("new_meeting_members", []) if m in master_members
+]
+new_meeting_members: list[str] = []
+if master_available and master_members:
+    new_meeting_members = st.sidebar.multiselect(
+        "처음 참석자 선택 (선택 사항)",
+        options=master_members,
+        key="new_meeting_members",
+        format_func=member_label,
+    )
+elif master_available:
+    st.sidebar.caption("'👥 전체 인원' 탭에서 인원을 먼저 등록하면 여기서 참석자를 고를 수 있어요.")
+
 if st.sidebar.button("🌱 모임 추가하기"):
     if not new_meeting_name:
         st.sidebar.warning("모임 이름을 입력해 주세요.")
@@ -967,9 +993,13 @@ if st.sidebar.button("🌱 모임 추가하기"):
     else:
         try:
             supabase.table("meetings").insert(
-                {"meeting_name": new_meeting_name, "members": ""}
+                {
+                    "meeting_name": new_meeting_name,
+                    "members": ", ".join([m for m in master_members if m in new_meeting_members]),
+                }
             ).execute()
             clear_cache()
+            st.session_state["_reset_new_meeting"] = True
             st.sidebar.success(f"'{new_meeting_name}' 모임이 생성되었습니다!")
             created = True
         except Exception as e:
@@ -1475,7 +1505,7 @@ if meeting_names:
                 st.markdown("---")
                 st.write(f"### 📅 {selected_meeting} 월별 출석 현황 ({selected_year_label})")
                 monthly_df, trend_df = build_monthly_grid(stat_df, member_list)
-                st.dataframe(monthly_df, use_container_width=True, hide_index=True)
+                st.dataframe(with_age_names(monthly_df), use_container_width=True, hide_index=True)
 
                 st.download_button(
                     label="📥 월별 출석 현황 CSV 다운로드",
@@ -1493,7 +1523,7 @@ if meeting_names:
                 st.write(f"### {EMOJI_TESTIMONY}{EMOJI_PRAYER} 월별 간증 · 기도부탁 현황 및 추이 ({selected_year_label})")
                 st.caption(f"표시 기호: {EMOJI_TESTIMONY} 간증, {EMOJI_PRAYER} 기도부탁 (같은 달에 여러 건이 있으면 숫자가 함께 표시됩니다)")
                 tp_grid_df, tp_trend_df = build_monthly_tp_overview(stat_df, member_list)
-                st.dataframe(tp_grid_df, use_container_width=True, hide_index=True)
+                st.dataframe(with_age_names(tp_grid_df), use_container_width=True, hide_index=True)
                 st.bar_chart(tp_trend_df, y=["간증", "기도부탁"], color=["#D96B43", "#5B8FB9"])
 
                 st.markdown("---")
@@ -1524,7 +1554,7 @@ if meeting_names:
                             }
                         )
                     detail_df = pd.DataFrame(detail_rows)
-                    st.dataframe(detail_df, use_container_width=True, hide_index=True)
+                    st.dataframe(with_age_names(detail_df), use_container_width=True, hide_index=True)
 
                 st.markdown("---")
                 summary_df = stat_df.groupby("이름", as_index=False).agg(
@@ -1543,7 +1573,7 @@ if meeting_names:
                 ]
 
                 st.write("### 📋 멤버별 누적 출석 · 간증 · 기도부탁 통계")
-                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                st.dataframe(with_age_names(summary_df), use_container_width=True, hide_index=True)
 
                 st.download_button(
                     label="📥 멤버별 누적 통계 CSV 다운로드",
@@ -1559,33 +1589,54 @@ if meeting_names:
             "모임과 관계없이 등록해 둔 모든 인원의 생일이 함께 관리되며, 앱 접속 시 오늘/다가오는 생일 알림으로 표시됩니다."
         )
 
-        with st.form(key="global_birthday_form"):
-            st.write("### 🎁 생일 등록 / 수정")
-            c1, c2, c3 = st.columns([2, 2, 3])
-            with c1:
-                b_name = st.text_input("이름", placeholder="예: 홍길동")
-            with c2:
-                b_raw = st.text_input("생일 (월-일)", placeholder="예: 03-15 또는 3/15")
-            with c3:
-                b_memo = st.text_input("메모 (선택)", placeholder="예: 음력/양력 또는 소속")
+        st.write("### 🎁 생일 등록 / 수정")
+        if not master_available or not master_members:
+            st.info("먼저 '👥 전체 인원' 탭에서 인원을 등록하면, 여기서 선택해서 생일을 저장할 수 있습니다.")
+        else:
+            b_name = st.selectbox(
+                "인원 선택",
+                master_members,
+                key="bday_member",
+                format_func=member_label,
+            )
+            existing_b = next((r for r in all_birthdays if r["member_name"] == b_name), None)
+            default_raw = existing_b["birthday"] if existing_b else ""
+            default_memo = existing_b["memo"] if existing_b else ""
+            if existing_b:
+                st.caption(f"현재 저장된 생일: {default_raw}")
 
-            b_save = st.form_submit_button("🎂 생일 저장")
-            if b_save:
-                norm_bday = normalize_mmdd(b_raw)
-                if not b_name.strip():
-                    st.warning("이름을 입력해 주세요.")
-                elif not norm_bday:
-                    st.warning("생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
-                else:
-                    bday_saved = False
-                    try:
-                        upsert_birthday(b_name, norm_bday, b_memo)
-                        bday_saved = True
-                    except Exception as e:
-                        st.error(f"생일을 저장하지 못했습니다: {e}")
-                    if bday_saved:
-                        st.success(f"'{b_name.strip()}'님의 생일({norm_bday})이 전체 생일 명단에 저장되었습니다!")
-                        st.rerun()
+            with st.form(key="global_birthday_form"):
+                c2, c3 = st.columns([2, 3])
+                with c2:
+                    b_raw = st.text_input(
+                        "생일 (월-일)",
+                        value=default_raw,
+                        placeholder="예: 03-15 또는 3/15",
+                        key=f"bday_raw_{b_name}",
+                    )
+                with c3:
+                    b_memo = st.text_input(
+                        "메모 (선택)",
+                        value=default_memo,
+                        placeholder="예: 음력/양력 또는 소속",
+                        key=f"bday_memo_{b_name}",
+                    )
+
+                b_save = st.form_submit_button("🎂 생일 저장")
+                if b_save:
+                    norm_bday = normalize_mmdd(b_raw)
+                    if not norm_bday:
+                        st.warning("생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
+                    else:
+                        bday_saved = False
+                        try:
+                            upsert_birthday(b_name, norm_bday, b_memo)
+                            bday_saved = True
+                        except Exception as e:
+                            st.error(f"생일을 저장하지 못했습니다: {e}")
+                        if bday_saved:
+                            st.success(f"'{member_label(b_name)}'님의 생일({norm_bday})이 전체 생일 명단에 저장되었습니다!")
+                            st.rerun()
 
         st.markdown("---")
         st.write("### 🗓️ 1월 ~ 12월 월별 생일자 모아보기")
@@ -1604,7 +1655,7 @@ if meeting_names:
                     if entries:
                         for d_num, name, memo in entries:
                             suffix = f" ({memo})" if memo else ""
-                            st.write(f"• **{name}** — {m}월 {d_num}일{suffix}")
+                            st.write(f"• **{member_label(name)}** — {m}월 {d_num}일{suffix}")
                     else:
                         st.caption("등록된 생일자 없음")
 
@@ -1614,7 +1665,7 @@ if meeting_names:
                 list_df = pd.DataFrame(
                     [
                         {
-                            "이름": r["member_name"],
+                            "이름": member_label(r["member_name"]),
                             "생일(MM-DD)": r["birthday"],
                             "메모": r["memo"],
                         }
@@ -1627,6 +1678,7 @@ if meeting_names:
                     "삭제할 인원 선택",
                     [r["member_name"] for r in all_birthdays],
                     key="del_bday_target",
+                    format_func=member_label,
                 )
                 if st.button("🗑️ 선택한 생일 삭제", key="btn_del_bday"):
                     bday_deleted = False
@@ -1636,7 +1688,7 @@ if meeting_names:
                     except Exception as e:
                         st.error(f"생일을 삭제하지 못했습니다: {e}")
                     if bday_deleted:
-                        st.success(f"'{del_target}'님의 생일 정보가 삭제되었습니다.")
+                        st.success(f"'{member_label(del_target)}'님의 생일 정보가 삭제되었습니다.")
                         st.rerun()
 
     with tab4:
@@ -1775,6 +1827,7 @@ if meeting_names:
                         "삭제할 인원 선택",
                         master_members,
                         key="del_master_target",
+                        format_func=member_label,
                     )
                     confirm_master_del = st.checkbox("삭제를 확인합니다", key="confirm_master_del")
                     if st.button("🗑️ 선택한 인원 삭제", key="btn_del_master"):
