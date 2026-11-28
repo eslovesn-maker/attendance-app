@@ -200,8 +200,29 @@ def apply_warm_theme() -> None:
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) :is(div[data-testid="stRadio"], div[data-testid="stPills"]) > div[data-testid="stWidgetLabel"] {{
             display: none !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] {{
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stColumn"] div.element-container {{
+            height: 40px !important;
+            min-height: 0 !important;
             margin: 0 !important;
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] {{
+            height: 40px !important;
+            margin: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {{
+            margin: 0 !important;
+            padding: 0 !important;
+            align-items: center !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) :is(div[data-testid="stMarkdown"], div[data-testid="stMarkdownContainer"]) {{
+            margin: 0 !important;
+            padding: 0 !important;
         }}
         div[data-testid="stForm"] div[data-testid="stVerticalBlock"] {{
             gap: 0.3rem !important;
