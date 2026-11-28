@@ -165,97 +165,53 @@ def apply_warm_theme() -> None:
             height: 1.5rem;
         }}
 
-        /* 출석 입력 행: 세로(모바일) 화면에서도 O△X + 간증/기도부탁 아이콘을 한 줄에 표시 */
+        /* 출석 입력 행 (이름 | 출석 O△X | 간증·기도부탁): 세로·가로 모드 모두 한 줄, 세로 가운데 정렬 */
+        div[data-testid="stForm"] div[data-testid="stVerticalBlock"] {{
+            gap: 0.3rem !important;
+        }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) {{
             gap: 0 !important;
+            padding: 6px 0 !important;
+            margin-bottom: -0.3rem !important;
+            border-bottom: 1px dashed #DCCDB8;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
             gap: 0 !important;
-            align-items: stretch !important;
+            align-items: center !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             width: auto !important;
             min-width: 0 !important;
             flex: 5 1 0 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-            min-height: 50px;
             padding: 0 8px !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(n+2) {{
-            border-left: 1px solid #DCCDB8;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {{
-            align-items: center !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] {{
-            flex: 1 1 auto !important;
-            justify-content: center !important;
-            gap: 0 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) :is(div[data-testid="stRadio"], div[data-testid="stPills"]) > div[data-testid="stWidgetLabel"] {{
-            display: none !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stColumn"] div.element-container {{
-            height: 40px !important;
-            min-height: 0 !important;
-            margin: 0 !important;
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: center !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] {{
-            height: 40px !important;
-            margin: 0 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {{
-            margin: 0 !important;
-            padding: 0 !important;
-            align-items: center !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) :is(div[data-testid="stMarkdown"], div[data-testid="stMarkdownContainer"]) {{
-            margin: 0 !important;
-            padding: 0 !important;
-        }}
-        div[data-testid="stForm"] div[data-testid="stVerticalBlock"] {{
-            gap: 0.3rem !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] label p {{
-            margin: 0 !important;
-            line-height: 1.2 !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {{
             flex: 6 1 0 !important;
+            padding-left: 2px !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {{
             flex: 8 1 0 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {{
-            flex-wrap: nowrap !important;
-            gap: 0.2rem !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] label {{
-            min-height: 40px;
-            align-items: center;
-            margin-right: 0.3rem !important;
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(n+2) {{
+            border-left: 1px solid #DCCDB8;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) button[data-testid^="stBaseButton-pills"] {{
             min-height: 40px !important;
-            padding: 4px 11px !important;
-            font-size: 1.05rem !important;
+            padding: 4px 10px !important;
+            font-size: 1rem !important;
             border-radius: 999px !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) button[data-testid="stBaseButton-pillsActive"] {{
             background-color: #FDE8D7 !important;
             border-color: #D49377 !important;
             color: #5C2B18 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {{
+            flex-wrap: nowrap !important;
+            gap: 0.2rem !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stCheckbox"] label {{
             display: flex !important;
@@ -632,7 +588,7 @@ def _fetch_birthdays() -> list[dict]:
 
 
 def load_all_birthdays() -> list[dict]:
-    return safe_call(_fetch_birthdays, [], "🌱 생일 목록을 불러오지 못했습니다")
+    return safe_call(_fetch_birthdays, [], "🌱 구원생일 목록을 불러오지 못했습니다")
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -1024,18 +980,18 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
 
     if not st.session_state.birthday_toast_shown:
         if today_list:
-            st.toast(f"🎂 오늘 생일: {', '.join(today_list)}", icon="🎂")
+            st.toast(f"🎂 오늘 구원생일: {', '.join(today_list)}", icon="🎂")
         elif upcoming_list:
             soonest = upcoming_list[0]
-            st.toast(f"🎈 {soonest[0]}일 뒤 생일: {soonest[1]}", icon="🎈")
+            st.toast(f"🎈 {soonest[0]}일 뒤 구원생일: {soonest[1]}", icon="🎈")
         st.session_state.birthday_toast_shown = True
 
     if today_list:
-        st.success(f"🎂 **오늘({today.month}월 {today.day}일) 생일 알림:** " + " | ".join(today_list))
+        st.success(f"🎂 **오늘({today.month}월 {today.day}일) 구원생일 알림:** " + " | ".join(today_list))
 
     if upcoming_list:
         items_text = " | ".join(f"{lbl} (D-{diff})" for diff, lbl in upcoming_list)
-        st.info(f"🎈 **다가오는 생일({alert_days}일 이내):** {items_text}")
+        st.info(f"🎈 **다가오는 구원생일({alert_days}일 이내):** {items_text}")
 
 
 def _set_selection(key: str, values: list[str]) -> None:
@@ -1079,6 +1035,14 @@ def read_tp_flags(meeting: str, date_iso: str, member: str) -> tuple[bool, bool]
         bool(st.session_state.get(f"testimony_{meeting}_{date_iso}_{member}", False)),
         bool(st.session_state.get(f"prayer_{meeting}_{date_iso}_{member}", False)),
     )
+
+
+def make_columns(spec: list):
+    """칸 내용을 세로 가운데로 정렬하는 columns (지원하지 않는 Streamlit 버전이면 기본 columns)."""
+    try:
+        return st.columns(spec, vertical_alignment="center")
+    except TypeError:
+        return st.columns(spec)
 
 
 def with_age_names(df: pd.DataFrame, col: str = "이름") -> pd.DataFrame:
@@ -1130,7 +1094,7 @@ if st.sidebar.button("🌱 모임 추가하기"):
             st.rerun()
 
 st.sidebar.markdown("---")
-alert_window = st.sidebar.slider("🎂 생일 미리 알림 기준(일)", min_value=1, max_value=30, value=7)
+alert_window = st.sidebar.slider("🎂 구원생일 미리 알림 기준(일)", min_value=1, max_value=30, value=7)
 st.sidebar.markdown("---")
 
 if meeting_names:
@@ -1324,7 +1288,7 @@ if meeting_names:
     render_birthday_alerts(all_birthdays, alert_days=alert_window)
 
     tab1, tab2, tab3, tab4 = st.tabs(
-        ["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 월별 생일", "👥 전체 인원"]
+        ["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 구원생일", "👥 전체 인원"]
     )
 
     with tab1:
@@ -1534,27 +1498,39 @@ if meeting_names:
                         ]
 
                     with st.container():
-                        st.markdown("<div class='tp-row-anchor'></div>", unsafe_allow_html=True)
+                        st.markdown(
+                            "<div class='tp-row-anchor' style='height:0; margin:0; padding:0; line-height:0;'></div>",
+                            unsafe_allow_html=True,
+                        )
                         if HAS_PILLS:
-                            n_col, r_col, tp_col = st.columns([6, 8, 5])
+                            n_col, r_col, tp_col = make_columns([6, 8, 5])
                         else:
-                            n_col, r_col, t_col, p_col = st.columns([6, 8, 5, 5])
+                            n_col, r_col, t_col, p_col = make_columns([6, 8, 5, 5])
 
                         with n_col:
                             st.markdown(
-                                "<div style='font-weight:700; font-size:0.92rem; line-height:1.3; word-break:keep-all;'>"
+                                "<div style='font-weight:700; font-size:0.9rem; line-height:1.3; word-break:keep-all;'>"
                                 f"🍃 {html.escape(member_label(member))}</div>",
                                 unsafe_allow_html=True,
                             )
 
                         with r_col:
-                            attendance_status[member] = st.radio(
-                                member_label(member),
-                                status_options,
-                                horizontal=True,
-                                key=radio_key,
-                                label_visibility="collapsed",
-                            )
+                            if HAS_PILLS:
+                                st.pills(
+                                    f"{member} 출석",
+                                    options=status_options,
+                                    selection_mode="single",
+                                    key=radio_key,
+                                    label_visibility="collapsed",
+                                )
+                            else:
+                                st.radio(
+                                    member_label(member),
+                                    status_options,
+                                    horizontal=True,
+                                    key=radio_key,
+                                    label_visibility="collapsed",
+                                )
 
                         if HAS_PILLS:
                             with tp_col:
@@ -1579,7 +1555,6 @@ if meeting_names:
                                     key=prayer_key,
                                     help="기도부탁",
                                 )
-                    st.markdown("<hr style='margin:0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
 
                 note_key = f"note_{selected_meeting}_{date_str}"
                 if note_key not in st.session_state:
@@ -1592,27 +1567,39 @@ if meeting_names:
 
                 if st.form_submit_button("🌿 출석 기록 저장하기", key=f"save_att_{selected_meeting}_{date_str}"):
                     att_saved = False
-                    try:
-                        payload = [
-                            {
-                                "meeting_name": selected_meeting,
-                                "record_date": date_str,
-                                "member_name": member,
-                                "status": st.session_state[f"radio_{selected_meeting}_{date_str}_{member}"],
-                                "note": build_note_with_flags(
-                                    st.session_state.get(note_key, ""),
-                                    *read_tp_flags(selected_meeting, date_str, member),
-                                ),
-                            }
-                            for member in member_list
-                        ]
-                        save_attendance_records(selected_meeting, date_str, payload, member_list)
-                        att_saved = True
-                    except Exception as e:
-                        st.error(
-                            f"출석 기록을 저장하지 못했습니다. 기존 기록은 그대로 유지됩니다.\n\n오류: {e}\n\n"
-                            "`attendance_records` 테이블에 (meeting_name, record_date, member_name) 유니크 제약이 있는지 확인해 주세요."
+                    # 출석 버튼을 다시 눌러 선택이 해제된 멤버가 있으면 저장하지 않고 알려줍니다.
+                    missing_status = [
+                        m
+                        for m in member_list
+                        if st.session_state.get(f"radio_{selected_meeting}_{date_str}_{m}") not in status_options
+                    ]
+                    if missing_status:
+                        st.warning(
+                            "출석(O · △ · X)이 선택되지 않은 멤버가 있어요: "
+                            + ", ".join(member_label(m) for m in missing_status)
                         )
+                    else:
+                        try:
+                            payload = [
+                                {
+                                    "meeting_name": selected_meeting,
+                                    "record_date": date_str,
+                                    "member_name": member,
+                                    "status": st.session_state[f"radio_{selected_meeting}_{date_str}_{member}"],
+                                    "note": build_note_with_flags(
+                                        st.session_state.get(note_key, ""),
+                                        *read_tp_flags(selected_meeting, date_str, member),
+                                    ),
+                                }
+                                for member in member_list
+                            ]
+                            save_attendance_records(selected_meeting, date_str, payload, member_list)
+                            att_saved = True
+                        except Exception as e:
+                            st.error(
+                                f"출석 기록을 저장하지 못했습니다. 기존 기록은 그대로 유지됩니다.\n\n오류: {e}\n\n"
+                                "`attendance_records` 테이블에 (meeting_name, record_date, member_name) 유니크 제약이 있는지 확인해 주세요."
+                            )
                     if att_saved:
                         st.success(f"'{selected_meeting}'의 {date_with_day} 출석 · 간증 · 기도부탁 기록이 저장되었습니다!")
                         st.rerun()
@@ -1741,14 +1728,14 @@ if meeting_names:
                 )
 
     with tab3:
-        st.subheader("🎂 전체 인원 월별 생일 관리 (모임 무관)")
+        st.subheader("🎂 구원생일 관리 (모임 무관)")
         st.caption(
-            "모임과 관계없이 등록해 둔 모든 인원의 생일이 함께 관리되며, 앱 접속 시 오늘/다가오는 생일 알림으로 표시됩니다."
+            "모임과 관계없이 등록해 둔 모든 인원의 구원생일이 함께 관리되며, 앱 접속 시 오늘/다가오는 구원생일 알림으로 표시됩니다."
         )
 
-        st.write("### 🎁 생일 등록 / 수정")
+        st.write("### 🎁 구원생일 등록 / 수정")
         if not master_available or not master_members:
-            st.info("먼저 '👥 전체 인원' 탭에서 인원을 등록하면, 여기서 선택해서 생일을 저장할 수 있습니다.")
+            st.info("먼저 '👥 전체 인원' 탭에서 인원을 등록하면, 여기서 선택해서 구원생일을 저장할 수 있습니다.")
         else:
             b_name = st.selectbox(
                 "인원 선택",
@@ -1760,13 +1747,13 @@ if meeting_names:
             default_raw = existing_b["birthday"] if existing_b else ""
             default_memo = existing_b["memo"] if existing_b else ""
             if existing_b:
-                st.caption(f"현재 저장된 생일: {default_raw}")
+                st.caption(f"현재 저장된 구원생일: {default_raw}")
 
             with st.form(key="global_birthday_form"):
                 c2, c3 = st.columns([2, 3])
                 with c2:
                     b_raw = st.text_input(
-                        "생일 (월-일)",
+                        "구원생일 (월-일)",
                         value=default_raw,
                         placeholder="예: 03-15 또는 3/15",
                         key=f"bday_raw_{b_name}",
@@ -1779,24 +1766,24 @@ if meeting_names:
                         key=f"bday_memo_{b_name}",
                     )
 
-                b_save = st.form_submit_button("🎂 생일 저장")
+                b_save = st.form_submit_button("🎂 구원생일 저장")
                 if b_save:
                     norm_bday = normalize_mmdd(b_raw)
                     if not norm_bday:
-                        st.warning("생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
+                        st.warning("구원생일을 '03-15' 또는 '3/15'처럼 월과 일 형태로 입력해 주세요.")
                     else:
                         bday_saved = False
                         try:
                             upsert_birthday(b_name, norm_bday, b_memo)
                             bday_saved = True
                         except Exception as e:
-                            st.error(f"생일을 저장하지 못했습니다: {e}")
+                            st.error(f"구원생일을 저장하지 못했습니다: {e}")
                         if bday_saved:
-                            st.success(f"'{member_label(b_name)}'님의 생일({norm_bday})이 전체 생일 명단에 저장되었습니다!")
+                            st.success(f"'{member_label(b_name)}'님의 구원생일({norm_bday})이 전체 구원생일 명단에 저장되었습니다!")
                             st.rerun()
 
         st.markdown("---")
-        st.write("### 🗓️ 1월 ~ 12월 월별 생일자 모아보기")
+        st.write("### 🗓️ 1월 ~ 12월 구원생일 모아보기")
 
         monthly_groups = {m: [] for m in range(1, 13)}
         for row in all_birthdays:
@@ -1820,16 +1807,16 @@ if meeting_names:
                                 unsafe_allow_html=True,
                             )
                     else:
-                        st.caption("등록된 생일자 없음")
+                        st.caption("등록된 구원생일자 없음")
 
         if all_birthdays:
             st.markdown("---")
-            with st.expander("📋 등록된 전체 생일 목록 및 삭제"):
+            with st.expander("📋 등록된 전체 구원생일 목록 및 삭제"):
                 list_df = pd.DataFrame(
                     [
                         {
                             "이름": member_label(r["member_name"]),
-                            "생일(MM-DD)": r["birthday"],
+                            "구원생일(MM-DD)": r["birthday"],
                             "메모": r["memo"],
                         }
                         for r in all_birthdays
@@ -1843,15 +1830,15 @@ if meeting_names:
                     key="del_bday_target",
                     format_func=member_label,
                 )
-                if st.button("🗑️ 선택한 생일 삭제", key="btn_del_bday"):
+                if st.button("🗑️ 선택한 구원생일 삭제", key="btn_del_bday"):
                     bday_deleted = False
                     try:
                         delete_birthday(del_target)
                         bday_deleted = True
                     except Exception as e:
-                        st.error(f"생일을 삭제하지 못했습니다: {e}")
+                        st.error(f"구원생일을 삭제하지 못했습니다: {e}")
                     if bday_deleted:
-                        st.success(f"'{member_label(del_target)}'님의 생일 정보가 삭제되었습니다.")
+                        st.success(f"'{member_label(del_target)}'님의 구원생일 정보가 삭제되었습니다.")
                         st.rerun()
 
     with tab4:
@@ -1912,7 +1899,7 @@ if meeting_names:
             if importable:
                 with st.container(border=True):
                     st.write(
-                        f"📥 기존 모임 명단·생일·출석 기록에 있는데 아직 전체 인원에 없는 이름이 **{len(importable)}명** 있어요."
+                        f"📥 기존 모임 명단·구원생일·출석 기록에 있는데 아직 전체 인원에 없는 이름이 **{len(importable)}명** 있어요."
                     )
                     st.caption(", ".join(importable))
                     if st.button("📥 기존 인원 한 번에 가져오기", key="btn_import_master"):
