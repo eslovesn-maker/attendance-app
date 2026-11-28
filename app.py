@@ -1208,6 +1208,39 @@ def render_rate_chart(trend_df: pd.DataFrame) -> None:
     _show_chart(_style_chart(bars + labels))
 
 
+def build_bible_overview(stat_df: pd.DataFrame, member_list: list) -> pd.DataFrame:
+    """성경읽기 쿠폰 현황: 사람별 · 2개월 구간별 전달 횟수 (구원생일 쿠폰은 세지 않음)."""
+    work_df = stat_df.copy()
+    work_df["월"] = pd.to_datetime(work_df["날짜"], errors="coerce").dt.month
+    work_df = work_df.dropna(subset=["월"])
+    work_df["구간"] = ((work_df["월"].astype(int) - FISCAL_START_MONTH) % 12) // 2
+    work_df["쿠폰"] = work_df["비고"].astype(str).str.contains(TAG_BIBLE, regex=False).astype(int)
+    counts = work_df.groupby(["이름", "구간"])["쿠폰"].sum()
+    labels = []
+    for i in range(6):
+        m1 = (FISCAL_START_MONTH - 1 + i * 2) % 12 + 1
+        labels.append(f"{m1}~{m1 % 12 + 1}월")
+    names = list(dict.fromkeys(member_list + stat_df["이름"].dropna().unique().tolist()))
+    rows = []
+    totals = [0] * 6
+    for idx, name in enumerate(names, start=1):
+        row = {"NO.": idx, "이름": name}
+        total = 0
+        for i, lb in enumerate(labels):
+            c = int(counts.get((name, i), 0))
+            totals[i] += c
+            total += c
+            row[lb] = (BIBLE_ICON if c == 1 else f"{BIBLE_ICON}{c}") if c else ""
+        row["계"] = total
+        rows.append(row)
+    total_row = {"NO.": "", "이름": "계"}
+    for i, lb in enumerate(labels):
+        total_row[lb] = str(totals[i])  # 칸 안에 글자(🎫)와 섞이므로 같은 글자 형식으로 맞춤
+    total_row["계"] = sum(totals)
+    rows.append(total_row)
+    return pd.DataFrame(rows, columns=["NO.", "이름"] + labels + ["계"])
+
+
 def render_tp_chart(tp_trend_df: pd.DataFrame) -> None:
     """월별 간증·기도부탁 막대 그래프: 1월~12월 순서, 가로 글씨, 정수 눈금."""
     if alt is None:
@@ -1344,6 +1377,14 @@ def render_stats_view(
             tp_grid_df, tp_trend_df = build_monthly_tp_overview(stat_df, member_list)
             st.dataframe(with_age_names(tp_grid_df), use_container_width=True, hide_index=True)
             render_tp_chart(tp_trend_df)
+
+            st.markdown("---")
+            st.write(f"### {BIBLE_ICON} 성경읽기 쿠폰 현황 ({selected_year_label})")
+            st.caption("2개월마다 전달하는 성경읽기 쿠폰만 집계합니다. (구원생일 쿠폰은 제외)")
+            bible_df = build_bible_overview(stat_df, member_list)
+            bible_total = int(bible_df.iloc[-1]["계"])
+            st.metric(f"{BIBLE_ICON} 누적 전달", f"{bible_total}장")
+            st.dataframe(with_age_names(bible_df), use_container_width=True, hide_index=True)
 
             st.markdown("---")
             st.write(f"### 📖 날짜별 · 멤버별 간증 및 기도부탁 상세 내역 ({selected_year_label})")
@@ -2325,7 +2366,7 @@ if meeting_names:
                 st.caption(f"{GIFT_ICON} {this_year}년 쿠폰 전달 완료")
 
             with st.form(key="global_birthday_form"):
-                c_in, c_btn, c_gift = make_columns([1.3, 1.2, 1.5], alignment="bottom")
+                c_in, c_btn = make_columns([1.4, 1.2], alignment="bottom")
                 with c_in:
                     b_raw = st.text_input(
                         "구원생일",
@@ -2335,10 +2376,6 @@ if meeting_names:
                     )
                 with c_btn:
                     b_save = st.form_submit_button("🎂 저장")
-                with c_gift:
-                    b_gift = st.form_submit_button(
-                        f"{GIFT_ICON} 전달 취소" if gift_done else f"{GIFT_ICON} 쿠폰 전달"
-                    )
 
                 if b_save:
                     norm_bday, birth_year = parse_salvation_input(b_raw)
@@ -2358,23 +2395,6 @@ if meeting_names:
                             st.success(
                                 f"'{member_label(b_name)}'님의 구원생일({format_salvation_date(norm_bday, memo_to_save)})이 저장되었습니다!"
                             )
-                            st.rerun()
-
-                if b_gift:
-                    if not existing_b:
-                        st.warning("먼저 구원생일을 저장해 주세요.")
-                    else:
-                        gift_saved = False
-                        try:
-                            upsert_birthday(
-                                b_name,
-                                existing_b["birthday"],
-                                with_gift(existing_b["memo"], None if gift_done else this_year),
-                            )
-                            gift_saved = True
-                        except Exception as e:
-                            st.error(f"쿠폰 전달을 저장하지 못했습니다: {e}")
-                        if gift_saved:
                             st.rerun()
 
         st.markdown("---")
