@@ -279,6 +279,30 @@ def apply_warm_theme() -> None:
             border-color: #D49377;
         }}
 
+        /* 연간 현황 패널: 오른쪽에서 끌려 나오는 모양 (스와이프 트리거 버튼은 숨김) */
+        .st-key-open_stats_drawer {{
+            display: none !important;
+        }}
+        div[data-testid="stDialog"] div[role="dialog"] {{
+            position: fixed !important;
+            top: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            left: auto !important;
+            margin: 0 !important;
+            height: 100dvh !important;
+            max-height: 100dvh !important;
+            width: min(94vw, 760px) !important;
+            max-width: none !important;
+            border-radius: 18px 0 0 18px !important;
+            overflow-y: auto !important;
+            animation: attSlideIn 0.28s ease-out;
+        }}
+        @keyframes attSlideIn {{
+            from {{ transform: translateX(100%); }}
+            to {{ transform: translateX(0); }}
+        }}
+
         /* 세로 모드(모바일 / 좁은 화면) 최적화 */
         @media (max-width: 768px) {{
             .block-container {{
@@ -1184,6 +1208,139 @@ def render_birthday_alerts(all_birthdays: list[dict], alert_days: int = 7) -> No
         st.info(f"🎈 **다가오는 구원생일({alert_days}일 이내):** {items_text}")
 
 
+def render_stats_view(
+    selected_meeting: str, df: pd.DataFrame, member_list: list, key_prefix: str = "", show_title: bool = True
+) -> None:
+    """연간 출석·간증·기도부탁 현황 화면. 탭과 옆에서 끌려 나오는 패널이 같이 사용합니다."""
+    if show_title:
+        st.subheader(f"📈 '{selected_meeting}' 연간 출석 · 간증 · 기도부탁 현황")
+    if df.empty:
+        st.info("🌱 아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
+    else:
+        fiscal_all = fiscal_year_series(df["날짜"])
+        available_years = sorted(fiscal_all.dropna().astype(int).unique().tolist(), reverse=True)
+        selected_fy = st.selectbox(
+            "🗓️ 조회 연도 필터 (12월 ~ 이듬해 11월)",
+            [None] + available_years,
+            format_func=lambda y: "전체 연도" if y is None else fiscal_year_label(y, with_range=True),
+            key=f"{key_prefix}year_filter_{selected_meeting}",
+        )
+        selected_year_label = "전체 연도" if selected_fy is None else fiscal_year_label(selected_fy)
+
+        if selected_fy is None:
+            filtered_df = df.copy()
+        else:
+            filtered_df = df[fiscal_all == selected_fy].copy()
+
+        if filtered_df.empty:
+            st.info(f"🍃 {selected_year_label}에 해당하는 출석 기록이 없습니다.")
+        else:
+            score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
+            stat_df = filtered_df.copy()
+            stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
+
+            parsed_notes = stat_df["비고"].apply(parse_note_and_flags)
+            stat_df["메모본문"] = [x[0] for x in parsed_notes]
+            stat_df["간증여부"] = [1 if x[1] else 0 for x in parsed_notes]
+            stat_df["기도부탁여부"] = [1 if x[2] else 0 for x in parsed_notes]
+
+            total_testimonies = int(stat_df["간증여부"].sum())
+            total_prayers = int(stat_df["기도부탁여부"].sum())
+            m1, m2, m3 = st.columns(3)
+            m1.metric("🗓️ 총 모임 횟수", f"{stat_df['날짜'].nunique()}회")
+            m2.metric(f"{EMOJI_TESTIMONY} 누적 간증", f"{total_testimonies}건")
+            m3.metric(f"{EMOJI_PRAYER} 누적 기도부탁", f"{total_prayers}건")
+
+            st.markdown("---")
+            st.write(f"### 📅 {selected_meeting} 월별 출석 현황 ({selected_year_label})")
+            monthly_df, trend_df = build_monthly_grid(stat_df, member_list)
+            st.dataframe(with_age_names(monthly_df), use_container_width=True, hide_index=True)
+
+            st.download_button(
+                label="📥 월별 출석 현황 CSV 다운로드",
+                data=to_csv_bytes(monthly_df),
+                file_name=f"{selected_meeting}_월별출석현황_{selected_year_label}.csv",
+                mime="text/csv",
+                key=f"{key_prefix}dl_monthly_{selected_meeting}_{selected_year_label}",
+            )
+
+            st.markdown("---")
+            st.write(f"### 🌤️ 월별 출석률 추이 ({selected_year_label})")
+            render_rate_chart(trend_df)
+
+            st.markdown("---")
+            st.write(f"### {EMOJI_TESTIMONY}{EMOJI_PRAYER} 월별 간증 · 기도부탁 현황 및 추이 ({selected_year_label})")
+            st.caption(f"표시 기호: {EMOJI_TESTIMONY} 간증, {EMOJI_PRAYER} 기도부탁 (같은 달에 여러 건이 있으면 숫자가 함께 표시됩니다)")
+            tp_grid_df, tp_trend_df = build_monthly_tp_overview(stat_df, member_list)
+            st.dataframe(with_age_names(tp_grid_df), use_container_width=True, hide_index=True)
+            render_tp_chart(tp_trend_df)
+
+            st.markdown("---")
+            st.write(f"### 📖 날짜별 · 멤버별 간증 및 기도부탁 상세 내역 ({selected_year_label})")
+            only_tp = st.checkbox(
+                "간증 또는 기도부탁이 체크된 항목만 모아보기",
+                value=True,
+                key=f"{key_prefix}only_tp_{selected_meeting}_{selected_year_label}",
+            )
+            detail_src = (
+                stat_df[(stat_df["간증여부"] == 1) | (stat_df["기도부탁여부"] == 1)]
+                if only_tp
+                else stat_df
+            )
+            if detail_src.empty:
+                st.info("선택한 조건에 해당하는 간증/기도부탁 기록이 아직 없습니다.")
+            else:
+                detail_rows = []
+                for _, r in detail_src.sort_values(["날짜", "이름"]).iterrows():
+                    detail_rows.append(
+                        {
+                            "날짜": format_date_with_weekday(str(r["날짜"])),
+                            "이름": r["이름"],
+                            "출석": r["출석상태"],
+                            "간증": f"{EMOJI_TESTIMONY} 간증" if r["간증여부"] else "",
+                            "기도부탁": f"{EMOJI_PRAYER} 기도부탁" if r["기도부탁여부"] else "",
+                            "모임 특이사항": r["메모본문"],
+                        }
+                    )
+                detail_df = pd.DataFrame(detail_rows)
+                st.dataframe(with_age_names(detail_df), use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            summary_df = stat_df.groupby("이름", as_index=False).agg(
+                **{
+                    "환산 출석 점수": ("출석점수", "sum"),
+                    "간증 횟수": ("간증여부", "sum"),
+                    "기도부탁 횟수": ("기도부탁여부", "sum"),
+                }
+            )
+
+            total_meetings = stat_df["날짜"].nunique()
+            summary_df["총 모임 수"] = total_meetings
+            summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
+            summary_df = summary_df[
+                ["이름", "환산 출석 점수", "총 모임 수", "출석률(%)", "간증 횟수", "기도부탁 횟수"]
+            ]
+
+            st.write("### 📋 멤버별 누적 출석 · 간증 · 기도부탁 통계")
+            st.dataframe(with_age_names(summary_df), use_container_width=True, hide_index=True)
+
+            st.download_button(
+                label="📥 멤버별 누적 통계 CSV 다운로드",
+                data=to_csv_bytes(summary_df),
+                file_name=f"{selected_meeting}_멤버별누적통계_{selected_year_label}.csv",
+                mime="text/csv",
+                key=f"{key_prefix}dl_summary_{selected_meeting}_{selected_year_label}",
+            )
+
+
+HAS_DIALOG = hasattr(st, "dialog")
+if HAS_DIALOG:
+
+    @st.dialog("📈 연간 출석 현황 및 추이", width="large")
+    def stats_drawer(selected_meeting: str, df: pd.DataFrame, member_list: list) -> None:
+        render_stats_view(selected_meeting, df, member_list, key_prefix="drawer_", show_title=False)
+
+
 def _set_selection(key: str, values: list[str]) -> None:
     st.session_state[key] = list(values)
 
@@ -1301,7 +1458,7 @@ HEADER_ALIGN_JS = """
 """
 
 
-SWIPE_TABS_JS = """
+SWIPE_DRAWER_JS = """
 <script>
 (function () {
   var P;
@@ -1315,7 +1472,6 @@ SWIPE_TABS_JS = """
     '[data-testid="stDataFrame"],[data-baseweb="tab-list"],[data-testid="stSidebar"],' +
     'canvas,[data-baseweb="popover"],[role="listbox"]';
 
-  // 옆으로 스크롤되는 영역(표, 날짜 칩 등) 안에서 시작한 스와이프는 탭 이동에 쓰지 않음
   function scrollableX(el) {
     while (el && el !== doc.body) {
       if (el.matches && el.matches(STOP_AT)) break;
@@ -1330,6 +1486,20 @@ SWIPE_TABS_JS = """
     if (t.closest(NO_SWIPE)) return true;
     return scrollableX(t);
   }
+  function openDialog() { return doc.querySelector('[data-testid="stDialog"]'); }
+  function firstTabSelected() {
+    var tabs = doc.querySelectorAll('[data-baseweb="tab-list"] button[role="tab"]');
+    return tabs.length > 0 && tabs[0].getAttribute('aria-selected') === 'true';
+  }
+  function findTrigger() {
+    var b = doc.querySelector('.st-key-open_stats_drawer button');
+    if (b) return b;
+    var all = doc.querySelectorAll('button');
+    for (var i = 0; i < all.length; i++) {
+      if ((all[i].innerText || '').indexOf('연간 현황 열기') >= 0) return all[i];
+    }
+    return null;
+  }
   function onStart(e) {
     if (!e.touches || e.touches.length !== 1) { ok = false; return; }
     var t = e.touches[0];
@@ -1343,16 +1513,20 @@ SWIPE_TABS_JS = """
     if (!t || Date.now() - t0 > 800) return;
     var dx = t.clientX - sx, dy = t.clientY - sy;
     if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
-    var tabs = Array.prototype.slice.call(
-      doc.querySelectorAll('[data-baseweb="tab-list"] button[role="tab"]'));
-    if (tabs.length < 2) return;
-    var cur = -1;
-    tabs.forEach(function (b, i) { if (b.getAttribute('aria-selected') === 'true') cur = i; });
-    if (cur < 0) return;
-    var next = cur + (dx < 0 ? 1 : -1);
-    if (next < 0 || next >= tabs.length) return;
-    tabs[next].click();
-    try { tabs[next].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (_) {}
+    var dlg = openDialog();
+    if (dlg) {
+      // 열려 있으면 오른쪽으로 밀어서 닫기
+      if (dx > 0) {
+        var close = dlg.querySelector('button[aria-label="Close"]');
+        if (close) close.click();
+      }
+      return;
+    }
+    // 출석 체크 탭에서 왼쪽으로 밀면 연간 현황이 끌려 나옴
+    if (dx < 0 && firstTabSelected()) {
+      var trig = findTrigger();
+      if (trig) trig.click();
+    }
   }
   doc.addEventListener('touchstart', onStart, { passive: true });
   doc.addEventListener('touchend', onEnd, { passive: true });
@@ -1618,7 +1792,12 @@ if meeting_names:
     tab1, tab2, tab3, tab4 = st.tabs(
         ["📝 출석 체크 및 사진", "📈 연간 출석 현황 및 추이", "🎂 구원생일", "👥 전체 인원"]
     )
-    components.html(SWIPE_TABS_JS, height=0)  # 좌우 스와이프로 탭 이동
+    if HAS_DIALOG:
+        # 출석 체크 탭에서 왼쪽으로 스와이프하면 연간 현황 패널이 옆에서 끌려 나옵니다.
+        # (스와이프 스크립트가 이 버튼을 대신 눌러 줍니다. 화면에서는 숨겨 둡니다.)
+        if st.button("📈 연간 현황 열기", key="open_stats_drawer"):
+            stats_drawer(selected_meeting, df, member_list)
+        components.html(SWIPE_DRAWER_JS, height=0)
 
     with tab1:
         st.subheader(f"☀️ '{selected_meeting}' 모임 출석 입력")
@@ -1972,124 +2151,7 @@ if meeting_names:
                         st.rerun()
 
     with tab2:
-        st.subheader(f"📈 '{selected_meeting}' 연간 출석 · 간증 · 기도부탁 현황")
-        if df.empty:
-            st.info("🌱 아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
-        else:
-            fiscal_all = fiscal_year_series(df["날짜"])
-            available_years = sorted(fiscal_all.dropna().astype(int).unique().tolist(), reverse=True)
-            selected_fy = st.selectbox(
-                "🗓️ 조회 연도 필터 (12월 ~ 이듬해 11월)",
-                [None] + available_years,
-                format_func=lambda y: "전체 연도" if y is None else fiscal_year_label(y, with_range=True),
-                key=f"year_filter_{selected_meeting}",
-            )
-            selected_year_label = "전체 연도" if selected_fy is None else fiscal_year_label(selected_fy)
-
-            if selected_fy is None:
-                filtered_df = df.copy()
-            else:
-                filtered_df = df[fiscal_all == selected_fy].copy()
-
-            if filtered_df.empty:
-                st.info(f"🍃 {selected_year_label}에 해당하는 출석 기록이 없습니다.")
-            else:
-                score_map = {"O": 1.0, "△": 0.5, "X": 0.0}
-                stat_df = filtered_df.copy()
-                stat_df["출석점수"] = stat_df["출석상태"].map(score_map).fillna(0.0)
-
-                parsed_notes = stat_df["비고"].apply(parse_note_and_flags)
-                stat_df["메모본문"] = [x[0] for x in parsed_notes]
-                stat_df["간증여부"] = [1 if x[1] else 0 for x in parsed_notes]
-                stat_df["기도부탁여부"] = [1 if x[2] else 0 for x in parsed_notes]
-
-                total_testimonies = int(stat_df["간증여부"].sum())
-                total_prayers = int(stat_df["기도부탁여부"].sum())
-                m1, m2, m3 = st.columns(3)
-                m1.metric("🗓️ 총 모임 횟수", f"{stat_df['날짜'].nunique()}회")
-                m2.metric(f"{EMOJI_TESTIMONY} 누적 간증", f"{total_testimonies}건")
-                m3.metric(f"{EMOJI_PRAYER} 누적 기도부탁", f"{total_prayers}건")
-
-                st.markdown("---")
-                st.write(f"### 📅 {selected_meeting} 월별 출석 현황 ({selected_year_label})")
-                monthly_df, trend_df = build_monthly_grid(stat_df, member_list)
-                st.dataframe(with_age_names(monthly_df), use_container_width=True, hide_index=True)
-
-                st.download_button(
-                    label="📥 월별 출석 현황 CSV 다운로드",
-                    data=to_csv_bytes(monthly_df),
-                    file_name=f"{selected_meeting}_월별출석현황_{selected_year_label}.csv",
-                    mime="text/csv",
-                    key=f"dl_monthly_{selected_meeting}_{selected_year_label}",
-                )
-
-                st.markdown("---")
-                st.write(f"### 🌤️ 월별 출석률 추이 ({selected_year_label})")
-                render_rate_chart(trend_df)
-
-                st.markdown("---")
-                st.write(f"### {EMOJI_TESTIMONY}{EMOJI_PRAYER} 월별 간증 · 기도부탁 현황 및 추이 ({selected_year_label})")
-                st.caption(f"표시 기호: {EMOJI_TESTIMONY} 간증, {EMOJI_PRAYER} 기도부탁 (같은 달에 여러 건이 있으면 숫자가 함께 표시됩니다)")
-                tp_grid_df, tp_trend_df = build_monthly_tp_overview(stat_df, member_list)
-                st.dataframe(with_age_names(tp_grid_df), use_container_width=True, hide_index=True)
-                render_tp_chart(tp_trend_df)
-
-                st.markdown("---")
-                st.write(f"### 📖 날짜별 · 멤버별 간증 및 기도부탁 상세 내역 ({selected_year_label})")
-                only_tp = st.checkbox(
-                    "간증 또는 기도부탁이 체크된 항목만 모아보기",
-                    value=True,
-                    key=f"only_tp_{selected_meeting}_{selected_year_label}",
-                )
-                detail_src = (
-                    stat_df[(stat_df["간증여부"] == 1) | (stat_df["기도부탁여부"] == 1)]
-                    if only_tp
-                    else stat_df
-                )
-                if detail_src.empty:
-                    st.info("선택한 조건에 해당하는 간증/기도부탁 기록이 아직 없습니다.")
-                else:
-                    detail_rows = []
-                    for _, r in detail_src.sort_values(["날짜", "이름"]).iterrows():
-                        detail_rows.append(
-                            {
-                                "날짜": format_date_with_weekday(str(r["날짜"])),
-                                "이름": r["이름"],
-                                "출석": r["출석상태"],
-                                "간증": f"{EMOJI_TESTIMONY} 간증" if r["간증여부"] else "",
-                                "기도부탁": f"{EMOJI_PRAYER} 기도부탁" if r["기도부탁여부"] else "",
-                                "모임 특이사항": r["메모본문"],
-                            }
-                        )
-                    detail_df = pd.DataFrame(detail_rows)
-                    st.dataframe(with_age_names(detail_df), use_container_width=True, hide_index=True)
-
-                st.markdown("---")
-                summary_df = stat_df.groupby("이름", as_index=False).agg(
-                    **{
-                        "환산 출석 점수": ("출석점수", "sum"),
-                        "간증 횟수": ("간증여부", "sum"),
-                        "기도부탁 횟수": ("기도부탁여부", "sum"),
-                    }
-                )
-
-                total_meetings = stat_df["날짜"].nunique()
-                summary_df["총 모임 수"] = total_meetings
-                summary_df["출석률(%)"] = (summary_df["환산 출석 점수"] / total_meetings * 100).round(1)
-                summary_df = summary_df[
-                    ["이름", "환산 출석 점수", "총 모임 수", "출석률(%)", "간증 횟수", "기도부탁 횟수"]
-                ]
-
-                st.write("### 📋 멤버별 누적 출석 · 간증 · 기도부탁 통계")
-                st.dataframe(with_age_names(summary_df), use_container_width=True, hide_index=True)
-
-                st.download_button(
-                    label="📥 멤버별 누적 통계 CSV 다운로드",
-                    data=to_csv_bytes(summary_df),
-                    file_name=f"{selected_meeting}_멤버별누적통계_{selected_year_label}.csv",
-                    mime="text/csv",
-                    key=f"dl_summary_{selected_meeting}_{selected_year_label}",
-                )
+        render_stats_view(selected_meeting, df, member_list)
 
     with tab3:
         st.subheader("🎂 구원생일 관리 (모임 무관)")
