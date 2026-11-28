@@ -636,10 +636,31 @@ def parse_salvation_input(raw: str) -> tuple[str | None, int | None]:
     return f"{m:02d}-{d:02d}", year
 
 
+def split_memo(memo: str | None) -> tuple[str, str]:
+    """DB memo 칸 -> (연도, 메모 글). 저장 형식은 '1994|상품 전달'.
+    예전 형식('1994' 또는 연도가 섞인 글)도 읽을 수 있습니다."""
+    raw = str(memo or "").strip()
+    if "|" in raw:
+        head, _, text = raw.partition("|")
+        head = head.strip()
+        year = head if re.fullmatch(r"(?:19|20)\d{2}", head) else ""
+        return year, text.strip()
+    found = re.search(r"(?:19|20)\d{2}", raw)
+    if not found:
+        return "", raw
+    rest = (raw[: found.start()] + raw[found.end():]).strip(" ,/·-")
+    return found.group(0), rest
+
+
+def join_memo(year, text: str) -> str:
+    year_txt = str(year) if year else ""
+    text = (text or "").strip()
+    return f"{year_txt}|{text}" if text else year_txt
+
+
 def extract_year(memo: str | None) -> str:
-    """메모에 적어 둔 4자리 연도(1900~2099)를 반환. 없으면 빈 문자열."""
-    found = re.search(r"(?:19|20)\d{2}", str(memo or ""))
-    return found.group(0) if found else ""
+    """메모 칸에 들어 있는 4자리 연도(1900~2099)를 반환. 없으면 빈 문자열."""
+    return split_memo(memo)[0]
 
 
 def days_until_birthday(mmdd: str, today: datetime.date) -> int | None:
@@ -2165,25 +2186,33 @@ if meeting_names:
             if existing_b:
                 st.caption(f"현재 저장된 구원생일: {default_text}")
 
+            existing_year, existing_memo_text = split_memo(existing_b["memo"]) if existing_b else ("", "")
             with st.form(key="global_birthday_form"):
-                c_in, c_btn = make_columns([3, 2], alignment="bottom")
+                c_in, c_memo, c_btn = make_columns([1.3, 2.7, 1.5], alignment="bottom")
                 with c_in:
                     b_raw = st.text_input(
-                        "구원생일 (년-월-일)",
+                        "구원생일",
                         value=default_text,
-                        placeholder="예: 1994-12-11",
+                        placeholder="1994-12-11",
                         key=f"bday_raw_{b_name}",
                     )
+                with c_memo:
+                    b_memo = st.text_input(
+                        "메모 (선택)",
+                        value=existing_memo_text,
+                        placeholder="예: 구원생일 선물 전달",
+                        key=f"bday_memo_{b_name}",
+                    )
                 with c_btn:
-                    b_save = st.form_submit_button("🎂 구원생일 저장")
+                    b_save = st.form_submit_button("🎂 저장")
 
                 if b_save:
                     norm_bday, birth_year = parse_salvation_input(b_raw)
                     if not norm_bday:
                         st.warning("구원생일을 '1994-12-11' 또는 '12-11'처럼 입력해 주세요. (날짜가 올바른지 확인해 주세요)")
                     else:
-                        # 연도는 기존 방식대로 메모 칸에 저장 (연도를 쓰지 않으면 기존 값을 유지)
-                        memo_to_save = str(birth_year) if birth_year else (existing_b["memo"] if existing_b else "")
+                        # 연도와 메모 글을 한 칸에 함께 저장 (연도를 쓰지 않으면 기존 연도를 유지)
+                        memo_to_save = join_memo(birth_year or existing_year, b_memo)
                         bday_saved = False
                         try:
                             upsert_birthday(b_name, norm_bday, memo_to_save)
@@ -2215,12 +2244,15 @@ if meeting_names:
                     entries = sorted(monthly_groups[m], key=lambda x: x[0])
                     if entries:
                         for d_num, name, memo in entries:
-                            year_txt = extract_year(memo)
+                            year_txt, memo_txt = split_memo(memo)
                             year_html = f" · {year_txt}" if year_txt else ""
+                            memo_html = (
+                                f"<br><span style='color:#B0643F;'>📝 {html.escape(memo_txt)}</span>" if memo_txt else ""
+                            )
                             st.markdown(
                                 "<div style='font-size:0.8rem; line-height:1.45; margin-bottom:6px; word-break:keep-all;'>"
                                 f"<b>{html.escape(member_label(name))}</b><br>"
-                                f"<span style='color:#8A7A6C;'>{d_num}일{year_html}</span></div>",
+                                f"<span style='color:#8A7A6C;'>{d_num}일{year_html}</span>{memo_html}</div>",
                                 unsafe_allow_html=True,
                             )
                     else:
@@ -2234,6 +2266,7 @@ if meeting_names:
                         {
                             "이름": member_label(r["member_name"]),
                             "구원생일": format_salvation_date(r["birthday"], r["memo"]),
+                            "메모": split_memo(r["memo"])[1],
                         }
                         for r in all_birthdays
                     ]
