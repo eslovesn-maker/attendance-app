@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 import time
 import uuid
 
@@ -1037,6 +1038,19 @@ def read_tp_flags(meeting: str, date_iso: str, member: str) -> tuple[bool, bool]
     )
 
 
+def format_salvation_date(mmdd: str | None, memo: str | None) -> str:
+    """구원생일 표시: 메모에 적어둔 4자리 연도를 찾아 '1994.12.11' 형태로 반환.
+    메모에 연도가 없으면 '12.11', 구원생일이 등록되지 않았으면 빈 문자열."""
+    norm = normalize_mmdd(mmdd or "")
+    if not norm:
+        return ""
+    m, d = map(int, norm.split("-"))
+    year_match = re.search(r"(?:19|20)\d{2}", str(memo or ""))
+    if year_match:
+        return f"{year_match.group(0)}.{m:02d}.{d:02d}"
+    return f"{m:02d}.{d:02d}"
+
+
 def make_columns(spec: list):
     """칸 내용을 세로 가운데로 정렬하는 columns (지원하지 않는 Streamlit 버전이면 기본 columns)."""
     try:
@@ -1471,6 +1485,7 @@ if meeting_names:
             attendance_status = {}
             testimony_checked = {}
             prayer_checked = {}
+            salvation_map = {r["member_name"]: (r["birthday"], r["memo"]) for r in all_birthdays}
 
             with st.form(key=f"att_form_{selected_meeting}_{date_str}"):
                 st.caption(f"{EMOJI_TESTIMONY} 간증 · {EMOJI_PRAYER} 기도부탁 — 선택 후 맨 아래 저장")
@@ -1508,9 +1523,19 @@ if meeting_names:
                             n_col, r_col, t_col, p_col = make_columns([6, 8, 5, 5])
 
                         with n_col:
+                            sal_text = format_salvation_date(*salvation_map.get(member, ("", "")))
+                            sal_html = (
+                                f"({sal_text})"
+                                if sal_text
+                                else "<span style='color:#B9AC9D;'>(미등록)</span>"
+                            )
                             st.markdown(
-                                "<div style='font-weight:700; font-size:0.9rem; line-height:1.3; word-break:keep-all;'>"
-                                f"🍃 {html.escape(member_label(member))}</div>",
+                                "<div style='line-height:1.25; word-break:keep-all;'>"
+                                "<div style='font-weight:700; font-size:0.9rem;'>"
+                                f"🍃 {html.escape(member_label(member))}</div>"
+                                "<div style='font-size:0.74rem; color:#8A7A6C; margin:2px 0 0 1.35rem;'>"
+                                f"{sal_html}</div>"
+                                "</div>",
                                 unsafe_allow_html=True,
                             )
 
