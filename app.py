@@ -12,6 +12,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 from supabase import Client, create_client
 
+try:
+    import altair as alt
+except Exception:  # altair가 없으면 기본 차트로 대체
+    alt = None
+
 st.set_page_config(page_title="동행수첩", page_icon="🌿", layout="wide")
 
 PHOTO_BUCKET = "attendance-photos"
@@ -1002,6 +1007,95 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
     return grid_df, trend_df
 
 
+MONTH_LABELS = [f"{m}월" for m in range(1, 13)]
+CHART_BG = "#FFFDF9"
+CHART_TEXT = "#5C4E44"
+CHART_GRID = "#EADFD0"
+
+
+def _style_chart(chart, height: int = 240):
+    return (
+        chart.properties(height=height, padding={"left": 4, "right": 8, "top": 18, "bottom": 4})
+        .configure(background=CHART_BG)
+        .configure_view(stroke=None)
+        .configure_axis(
+            labelColor=CHART_TEXT,
+            labelFontSize=11,
+            domainColor=CHART_GRID,
+            tickColor=CHART_GRID,
+            gridColor=CHART_GRID,
+        )
+        .configure_legend(labelColor=CHART_TEXT, labelFontSize=12, orient="bottom", title=None)
+    )
+
+
+def _show_chart(chart) -> None:
+    try:
+        st.altair_chart(chart, width="stretch", theme=None)
+    except TypeError:  # 이전 Streamlit 버전
+        st.altair_chart(chart, use_container_width=True, theme=None)
+
+
+def render_rate_chart(trend_df: pd.DataFrame) -> None:
+    """월별 출석률 막대 그래프: 1월~12월 순서, 가로 글씨, 막대 위 숫자, 0~100% 고정."""
+    values = [float(trend_df["출석률(%)"].get(label, 0.0)) for label in MONTH_LABELS]
+    if alt is None:
+        fallback = pd.DataFrame({"출석률(%)": values}, index=[f"{m:02d}월" for m in range(1, 13)])
+        st.bar_chart(fallback, y="출석률(%)", color="#D96B43")
+        return
+
+    data = pd.DataFrame({"월": MONTH_LABELS, "rate": values})
+    x = alt.X("월:N", sort=MONTH_LABELS, axis=alt.Axis(title=None, labelAngle=0, labelOverlap=False, ticks=False))
+    y = alt.Y(
+        "rate:Q",
+        scale=alt.Scale(domain=[0, 100]),
+        axis=alt.Axis(title=None, values=[0, 25, 50, 75, 100], format="d", labelExpr="datum.label + '%'"),
+    )
+    bars = alt.Chart(data).mark_bar(color="#D96B43", cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+        x=x,
+        y=y,
+        tooltip=[alt.Tooltip("월:N"), alt.Tooltip("rate:Q", title="출석률(%)", format=".1f")],
+    )
+    labels = (
+        alt.Chart(data)
+        .transform_filter("datum.rate > 0")
+        .mark_text(dy=-7, fontSize=11, fontWeight="bold", color=CHART_TEXT)
+        .encode(x=x, y=y, text=alt.Text("rate:Q", format=".0f"))
+    )
+    _show_chart(_style_chart(bars + labels))
+
+
+def render_tp_chart(tp_trend_df: pd.DataFrame) -> None:
+    """월별 간증·기도부탁 막대 그래프: 1월~12월 순서, 가로 글씨, 정수 눈금."""
+    if alt is None:
+        fallback = tp_trend_df.reindex(MONTH_LABELS).fillna(0)
+        fallback.index = [f"{m:02d}월" for m in range(1, 13)]
+        st.bar_chart(fallback, y=["간증", "기도부탁"], color=["#D96B43", "#5B8FB9"])
+        return
+
+    rows = []
+    for label in MONTH_LABELS:
+        for kind in ("간증", "기도부탁"):
+            rows.append({"월": label, "구분": kind, "건수": int(tp_trend_df[kind].get(label, 0))})
+    data = pd.DataFrame(rows)
+
+    x = alt.X("월:N", sort=MONTH_LABELS, axis=alt.Axis(title=None, labelAngle=0, labelOverlap=False, ticks=False))
+    y = alt.Y("건수:Q", axis=alt.Axis(title=None, tickMinStep=1, format="d"))
+    color = alt.Color(
+        "구분:N",
+        scale=alt.Scale(domain=["간증", "기도부탁"], range=["#D96B43", "#5B8FB9"]),
+        legend=alt.Legend(title=None),
+    )
+    tooltip = [alt.Tooltip("월:N"), alt.Tooltip("구분:N"), alt.Tooltip("건수:Q")]
+    try:  # altair 5 이상: 한 달에 두 막대를 나란히
+        bars = alt.Chart(data).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+            x=x, xOffset=alt.XOffset("구분:N"), y=y, color=color, tooltip=tooltip
+        )
+    except Exception:  # 이전 버전: 쌓은 막대
+        bars = alt.Chart(data).mark_bar().encode(x=x, y=y, color=color, tooltip=tooltip)
+    _show_chart(_style_chart(bars))
+
+
 def to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")
 
@@ -1824,14 +1918,14 @@ if meeting_names:
 
                 st.markdown("---")
                 st.write(f"### 🌤️ 월별 출석률 추이 ({selected_year_label})")
-                st.bar_chart(trend_df, y="출석률(%)", color="#D96B43")
+                render_rate_chart(trend_df)
 
                 st.markdown("---")
                 st.write(f"### {EMOJI_TESTIMONY}{EMOJI_PRAYER} 월별 간증 · 기도부탁 현황 및 추이 ({selected_year_label})")
                 st.caption(f"표시 기호: {EMOJI_TESTIMONY} 간증, {EMOJI_PRAYER} 기도부탁 (같은 달에 여러 건이 있으면 숫자가 함께 표시됩니다)")
                 tp_grid_df, tp_trend_df = build_monthly_tp_overview(stat_df, member_list)
                 st.dataframe(with_age_names(tp_grid_df), use_container_width=True, hide_index=True)
-                st.bar_chart(tp_trend_df, y=["간증", "기도부탁"], color=["#D96B43", "#5B8FB9"])
+                render_tp_chart(tp_trend_df)
 
                 st.markdown("---")
                 st.write(f"### 📖 날짜별 · 멤버별 간증 및 기도부탁 상세 내역 ({selected_year_label})")
