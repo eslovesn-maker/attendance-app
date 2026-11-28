@@ -496,12 +496,12 @@ def _fetch_master_members() -> list[str]:
     return [str(r["member_name"]).strip() for r in (res.data or []) if str(r["member_name"]).strip()]
 
 
-def load_master_members() -> tuple[list[str], bool]:
-    """(전체 인원 목록, 테이블 사용 가능 여부)"""
+def load_master_members() -> tuple[list[str], bool, str]:
+    """(전체 인원 목록, 테이블 사용 가능 여부, 오류 내용)"""
     try:
-        return _fetch_master_members(), True
-    except Exception:
-        return [], False
+        return _fetch_master_members(), True, ""
+    except Exception as e:
+        return [], False, f"{type(e).__name__}: {e}"
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -871,7 +871,7 @@ new_meeting_name = st.sidebar.text_input("새 모임 이름 입력", placeholder
 meetings_map = load_meetings()
 meeting_names = list(meetings_map.keys())
 all_birthdays = load_all_birthdays()
-master_members, master_available = load_master_members()
+master_members, master_available, master_error = load_master_members()
 
 if st.sidebar.button("🌱 모임 추가하기"):
     if not new_meeting_name:
@@ -1559,7 +1559,10 @@ if meeting_names:
         )
 
         if not master_available:
-            st.error("전체 인원 저장소(`members_master` 테이블)를 찾을 수 없습니다. 아래 SQL을 Supabase **SQL Editor**에서 한 번 실행해 주세요.")
+            st.error("전체 인원 저장소(`members_master` 테이블)를 불러오지 못했습니다.")
+            st.write("**실제 오류 내용** (이 내용을 알려주시면 원인을 바로 찾을 수 있어요):")
+            st.code(master_error or "(오류 내용 없음)", language="text")
+            st.write("테이블이 아직 없다면 아래 SQL을 Supabase **SQL Editor**에서 한 번 실행해 주세요.")
             st.code(MASTER_TABLE_SQL, language="sql")
             st.caption("실행 후 이 화면을 새로고침하세요. 다른 테이블에 RLS 정책을 쓰고 있다면 같은 정책을 이 테이블에도 추가해야 합니다.")
         else:
