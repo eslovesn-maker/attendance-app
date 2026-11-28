@@ -69,6 +69,7 @@ def apply_warm_theme() -> None:
         .stApp {{
             background: {bg_gradient};
             color: #3A322C;
+            --cell: clamp(2.3rem, 9.5vw, 3.3rem);
         }}
         section[data-testid="stSidebar"] {{
             background-color: #F3ECE0;
@@ -208,13 +209,22 @@ def apply_warm_theme() -> None:
             width: 100% !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stButtonGroup"] {{
-            display: grid !important;
-            grid-auto-flow: column !important;
-            grid-auto-columns: 1fr !important;
-            justify-items: center !important;
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            justify-content: center !important;
             align-items: center !important;
             gap: 0 !important;
             width: 100% !important;
+        }}
+        /* 버튼 한 칸의 폭(--cell)을 머리글과 똑같이 사용: 머리글이 버튼 바로 위에 정확히 놓임 */
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stButtonGroup"] > button {{
+            flex: 0 0 calc(var(--cell) - 6px) !important;
+            width: calc(var(--cell) - 6px) !important;
+            min-width: 0 !important;
+            margin: 0 3px !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            justify-content: center !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) button[data-testid^="stBaseButton-pills"] {{
             min-height: 40px !important;
@@ -1070,11 +1080,15 @@ def format_salvation_date(mmdd: str | None, memo: str | None) -> str:
 
 def header_grid(labels: list[str]) -> str:
     """머리글 칸: 라벨을 같은 폭으로 나눠 아래 버튼 위에 가운데 정렬."""
-    cells = "".join(f"<span>{html.escape(lb)}</span>" for lb in labels)
+    cells = "".join(
+        "<span style='flex:0 0 var(--cell); width:var(--cell); display:flex; "
+        "justify-content:center; align-items:center; white-space:nowrap; overflow:visible;'>"
+        f"<span style='flex:0 0 auto;'>{html.escape(lb)}</span></span>"
+        for lb in labels
+    )
     return (
-        f"<div style='display:grid; grid-template-columns:repeat({len(labels)}, 1fr); "
-        "justify-items:center; font-size:0.7rem; font-weight:600; color:#8A7A6C; "
-        f"letter-spacing:-0.02em; white-space:nowrap;'>{cells}</div>"
+        "<div style='display:flex; justify-content:center; width:100%; font-size:0.7rem; "
+        f"font-weight:600; color:#8A7A6C; letter-spacing:-0.03em;'>{cells}</div>"
     )
 
 
@@ -1526,7 +1540,7 @@ if meeting_names:
                         h_n, h_r, h_t, h_p = make_columns([6, 8, 5, 5])
                     with h_n:
                         st.markdown(
-                            "<div style='font-size:0.7rem; font-weight:600; color:#8A7A6C; padding-left:2px;'>이름</div>",
+                            "<div style='font-size:0.7rem; font-weight:600; color:#8A7A6C; text-align:center;'>이름</div>",
                             unsafe_allow_html=True,
                         )
                     with h_r:
@@ -1582,10 +1596,11 @@ if meeting_names:
                             )
                             st.markdown(
                                 "<div style='display:flex; flex-direction:column; justify-content:center; "
+                                "align-items:center; text-align:center; "
                                 "min-height:40px; line-height:1.25; word-break:keep-all;'>"
                                 "<div style='font-weight:700; font-size:0.9rem;'>"
                                 f"🍃 {html.escape(member_label(member))}</div>"
-                                "<div style='font-size:0.74rem; color:#8A7A6C; margin:2px 0 0 1.35rem;'>"
+                                "<div style='font-size:0.74rem; color:#8A7A6C; margin:2px 0 0 0;'>"
                                 f"{sal_html}</div>"
                                 "</div>",
                                 unsafe_allow_html=True,
