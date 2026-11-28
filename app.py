@@ -163,8 +163,26 @@ def apply_warm_theme() -> None:
             text-overflow: unset !important;
         }}
 
-        .member-tp-spacer {{
-            height: 1.5rem;
+        /* 사진 업로드: 안내 문구(용량·확장자·드래그)를 숨기고 버튼만 남겨 왼쪽 날짜 입력칸과 높이를 맞춤 */
+        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] {{
+            padding: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            min-height: 0 !important;
+        }}
+        div[data-testid="stFileUploaderDropzoneInstructions"] {{
+            display: none !important;
+        }}
+        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] button {{
+            width: 100% !important;
+            min-height: 2.5rem !important;
+            font-size: 0 !important;
+            border-radius: 10px !important;
+        }}
+        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] button::after {{
+            content: "📷 사진 업로드";
+            font-size: 0.95rem;
+            font-weight: 600;
         }}
 
         /* 출석 입력 행 (이름 | 출석 O△X | 간증·기도부탁): 세로·가로 모드 모두 한 줄, 세로 가운데 정렬 */
@@ -264,15 +282,19 @@ def apply_warm_theme() -> None:
                 padding-top: 2.5rem !important;
                 padding-bottom: 3.5rem !important;
             }}
-            h1 {{
-                font-size: 1.45rem !important;
+            /* 세로 모드 제목: 화면 폭에 맞춰 글씨를 줄여 한 줄로 표시 */
+            .stApp h1, .stApp [data-testid="stHeading"] h1 {{
+                font-size: clamp(1rem, 4.6vw, 1.45rem) !important;
                 line-height: 1.3 !important;
+                white-space: nowrap !important;
             }}
-            h2 {{
-                font-size: 1.2rem !important;
+            .stApp h2, .stApp [data-testid="stHeading"] h2 {{
+                font-size: clamp(0.95rem, 4.2vw, 1.2rem) !important;
+                white-space: nowrap !important;
             }}
-            h3 {{
-                font-size: 1.05rem !important;
+            .stApp h3, .stApp [data-testid="stHeading"] h3 {{
+                font-size: clamp(0.9rem, 4vw, 1.05rem) !important;
+                white-space: nowrap !important;
             }}
             button[data-baseweb="tab"] {{
                 padding: 7px 10px !important;
@@ -281,9 +303,6 @@ def apply_warm_theme() -> None:
             div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
                 padding: 4px 9px !important;
                 font-size: 0.8rem !important;
-            }}
-            .member-tp-spacer {{
-                height: 1.4rem;
             }}
         }}
         </style>
@@ -818,12 +837,11 @@ def save_attendance_records(
         or []
     )
     keep_set = set(keep_members)
-    for row in existing:
-        name = str(row["member_name"])
-        if name not in keep_set:
-            supabase.table("attendance_records").delete().eq("meeting_name", meeting_name).eq(
-                "record_date", record_date
-            ).eq("member_name", name).execute()
+    stale = [str(row["member_name"]) for row in existing if str(row["member_name"]) not in keep_set]
+    if stale:  # 명단에서 빠진 사람은 한 번에 정리 (사람마다 따로 지우지 않음)
+        supabase.table("attendance_records").delete().eq("meeting_name", meeting_name).eq(
+            "record_date", record_date
+        ).in_("member_name", stale).execute()
     clear_cache()
 
 
@@ -833,7 +851,8 @@ def upload_and_save_photo(uploaded_file, meeting_name: str, record_date: str) ->
         ext = "png"
 
     content_type = uploaded_file.type or f"image/{ext}"
-    safe_meeting = str(uuid.uuid4())[:8]
+    # 모임마다 같은 폴더를 쓰도록 모임 이름에서 고정된 폴더명을 만듦 (한글 경로 문제 방지)
+    safe_meeting = hashlib.sha1(meeting_name.encode("utf-8")).hexdigest()[:8]
     storage_path = f"{safe_meeting}/{record_date}/{uuid.uuid4().hex}.{ext}"
 
     file_bytes = uploaded_file.getvalue()
@@ -869,48 +888,57 @@ def delete_photo_record(photo_row: dict) -> None:
 # ---------------------------------------------------------------------------
 # 통계
 # ---------------------------------------------------------------------------
+def _month_frame(stat_df: pd.DataFrame) -> pd.DataFrame:
+    """날짜에서 월(정수)을 뽑고, 날짜를 읽을 수 없는 행은 제외한 복사본."""
+    work_df = stat_df.copy()
+    work_df["월"] = pd.to_datetime(work_df["날짜"], errors="coerce").dt.month
+    work_df = work_df.dropna(subset=["월"])
+    work_df["월"] = work_df["월"].astype(int)
+    return work_df
+
+
 def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
     months = [f"{m}월" for m in range(1, 13)]
-    parsed_dates = pd.to_datetime(stat_df["날짜"], errors="coerce")
-    work_df = stat_df.copy()
-    work_df["월"] = parsed_dates.dt.month
-
     priority = {"O": 3, "△": 2, "X": 1}
     symbol_map = {"O": "●", "△": "△", "X": "X"}
 
-    all_names = list(dict.fromkeys(member_list + work_df["이름"].dropna().unique().tolist()))
+    work_df = _month_frame(stat_df)
+    all_names = list(dict.fromkeys(member_list + stat_df["이름"].dropna().unique().tolist()))
+
+    # (이름, 월)별로 가장 우선순위 높은 출석 상태를 한 번에 계산
+    work_df["_prio"] = work_df["출석상태"].map(priority).fillna(0)
+    best_status = (
+        work_df.sort_values("_prio", ascending=False, kind="stable")
+        .drop_duplicates(["이름", "월"])
+        .set_index(["이름", "월"])["출석상태"]
+        .to_dict()
+    )
+
     grid_rows = []
     month_present_counts = {m: 0 for m in range(1, 13)}
     month_recorded_counts = {m: 0 for m in range(1, 13)}
 
     for idx, name in enumerate(all_names, start=1):
         row_data = {"NO.": idx, "이름": name}
-        person_df = work_df[work_df["이름"] == name]
         for m in range(1, 13):
-            col_label = f"{m}월"
-            m_sub = person_df[person_df["월"] == m]
-            if m_sub.empty:
-                row_data[col_label] = ""
+            status = best_status.get((name, m))
+            if status is None:
+                row_data[f"{m}월"] = ""
             else:
-                best_status = max(
-                    m_sub["출석상태"].tolist(),
-                    key=lambda s: priority.get(s, 0),
-                )
-                row_data[col_label] = symbol_map.get(best_status, best_status)
+                row_data[f"{m}월"] = symbol_map.get(status, status)
                 month_recorded_counts[m] += 1
-                if best_status == "O":
+                if status == "O":
                     month_present_counts[m] += 1
         grid_rows.append(row_data)
 
     total_row = {"NO.": "", "이름": "계"}
     trend_rows = []
     for m in range(1, 13):
-        col_label = f"{m}월"
         present_cnt = month_present_counts[m]
         recorded_cnt = month_recorded_counts[m]
-        total_row[col_label] = present_cnt
+        total_row[f"{m}월"] = present_cnt
         rate = round((present_cnt / recorded_cnt) * 100, 1) if recorded_cnt > 0 else 0.0
-        trend_rows.append({"월": col_label, "출석률(%)": rate})
+        trend_rows.append({"월": f"{m}월", "출석률(%)": rate})
 
     grid_rows.append(total_row)
     grid_df = pd.DataFrame(grid_rows, columns=["NO.", "이름"] + months)
@@ -920,11 +948,14 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.Dat
 
 def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
     months = [f"{m}월" for m in range(1, 13)]
-    parsed_dates = pd.to_datetime(stat_df["날짜"], errors="coerce")
-    work_df = stat_df.copy()
-    work_df["월"] = parsed_dates.dt.month
+    work_df = _month_frame(stat_df)
+    all_names = list(dict.fromkeys(member_list + stat_df["이름"].dropna().unique().tolist()))
 
-    all_names = list(dict.fromkeys(member_list + work_df["이름"].dropna().unique().tolist()))
+    # (이름, 월)별 간증·기도부탁 횟수를 한 번에 합산
+    sums = work_df.groupby(["이름", "월"])[["간증여부", "기도부탁여부"]].sum()
+    t_map = {k: int(v) for k, v in sums["간증여부"].items()}
+    p_map = {k: int(v) for k, v in sums["기도부탁여부"].items()}
+
     grid_rows = []
     month_t_totals = {m: 0 for m in range(1, 13)}
     month_p_totals = {m: 0 for m in range(1, 13)}
@@ -933,12 +964,9 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
         row_data = {"NO.": idx, "이름": name}
         t_sum = 0
         p_sum = 0
-        person_df = work_df[work_df["이름"] == name]
         for m in range(1, 13):
-            col_label = f"{m}월"
-            m_sub = person_df[person_df["월"] == m]
-            t_cnt = int(m_sub["간증여부"].sum()) if not m_sub.empty else 0
-            p_cnt = int(m_sub["기도부탁여부"].sum()) if not m_sub.empty else 0
+            t_cnt = t_map.get((name, m), 0)
+            p_cnt = p_map.get((name, m), 0)
             t_sum += t_cnt
             p_sum += p_cnt
             month_t_totals[m] += t_cnt
@@ -949,7 +977,7 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
                 badges.append(f"{EMOJI_TESTIMONY}{t_cnt}" if t_cnt > 1 else EMOJI_TESTIMONY)
             if p_cnt > 0:
                 badges.append(f"{EMOJI_PRAYER}{p_cnt}" if p_cnt > 1 else EMOJI_PRAYER)
-            row_data[col_label] = " ".join(badges)
+            row_data[f"{m}월"] = " ".join(badges)
 
         row_data["간증 계"] = t_sum
         row_data["기도부탁 계"] = p_sum
@@ -958,19 +986,12 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
     total_row = {"NO.": "", "이름": "계"}
     trend_rows = []
     for m in range(1, 13):
-        col_label = f"{m}월"
-        total_row[col_label] = (
+        total_row[f"{m}월"] = (
             f"{EMOJI_TESTIMONY}{month_t_totals[m]} {EMOJI_PRAYER}{month_p_totals[m]}"
             if (month_t_totals[m] or month_p_totals[m])
             else ""
         )
-        trend_rows.append(
-            {
-                "월": col_label,
-                "간증": month_t_totals[m],
-                "기도부탁": month_p_totals[m],
-            }
-        )
+        trend_rows.append({"월": f"{m}월", "간증": month_t_totals[m], "기도부탁": month_p_totals[m]})
 
     total_row["간증 계"] = sum(month_t_totals.values())
     total_row["기도부탁 계"] = sum(month_p_totals.values())
@@ -1548,7 +1569,7 @@ if meeting_names:
                         )
 
         st.markdown("---")
-        st.write("### 🌷 멤버별 출석 · 간증 · 기도부탁 체크 (O: 출석, △: 지각/조퇴, X: 결석)")
+        st.write("### 🌷 멤버별 출석 체크")
 
         if not member_list:
             st.warning("왼쪽 사이드바 **멤버 설정**에서 참석자를 선택하고 **💾 멤버 저장하기**를 눌러주세요.")
@@ -1561,7 +1582,6 @@ if meeting_names:
             existing_note = ""
 
             if has_existing:
-                st.caption(f"✏️ **{date_with_day}**에 이미 저장된 기록이 있어 기존 값을 불러왔습니다. 체크 후 아래 저장 버튼을 눌러주세요.")
                 for _, r in existing_day_df.iterrows():
                     m_name = str(r["이름"])
                     existing_status_map[m_name] = r["출석상태"]
@@ -1572,9 +1592,6 @@ if meeting_names:
                         existing_note = clean_memo
 
             status_options = ["O", "△", "X"]
-            attendance_status = {}
-            testimony_checked = {}
-            prayer_checked = {}
             salvation_map = {r["member_name"]: (r["birthday"], r["memo"]) for r in all_birthdays}
 
             if HAS_PILLS:
@@ -1614,20 +1631,22 @@ if meeting_names:
                     default_status = existing_status_map.get(member, "O")
                     if radio_key not in st.session_state:
                         st.session_state[radio_key] = default_status if default_status in status_options else "O"
-                    if testimony_key not in st.session_state:
-                        st.session_state[testimony_key] = existing_testimony_map.get(member, False)
-                    if prayer_key not in st.session_state:
-                        st.session_state[prayer_key] = existing_prayer_map.get(member, False)
                     tp_key = f"tp_{selected_meeting}_{date_str}_{member}"
-                    if HAS_PILLS and tp_key not in st.session_state:
-                        st.session_state[tp_key] = [
-                            code
-                            for code, flag in (
-                                ("t", existing_testimony_map.get(member, False)),
-                                ("p", existing_prayer_map.get(member, False)),
-                            )
-                            if flag
-                        ]
+                    if HAS_PILLS:
+                        if tp_key not in st.session_state:
+                            st.session_state[tp_key] = [
+                                code
+                                for code, flag in (
+                                    ("t", existing_testimony_map.get(member, False)),
+                                    ("p", existing_prayer_map.get(member, False)),
+                                )
+                                if flag
+                            ]
+                    else:
+                        if testimony_key not in st.session_state:
+                            st.session_state[testimony_key] = existing_testimony_map.get(member, False)
+                        if prayer_key not in st.session_state:
+                            st.session_state[prayer_key] = existing_prayer_map.get(member, False)
 
                     with st.container():
                         st.markdown(
@@ -1688,13 +1707,13 @@ if meeting_names:
                                 )
                         else:
                             with t_col:
-                                testimony_checked[member] = st.checkbox(
+                                st.checkbox(
                                     EMOJI_TESTIMONY,
                                     key=testimony_key,
                                     help="간증",
                                 )
                             with p_col:
-                                prayer_checked[member] = st.checkbox(
+                                st.checkbox(
                                     EMOJI_PRAYER,
                                     key=prayer_key,
                                     help="기도부탁",
@@ -1934,8 +1953,11 @@ if meeting_names:
             m_num, d_num = map(int, row["birthday"].split("-"))
             monthly_groups[m_num].append((d_num, row["member_name"], row["memo"]))
 
-        month_cols = st.columns(4)
+        # 4칸씩 한 줄(1~4월, 5~8월, 9~12월)로 배치해서 같은 줄의 카드 높이·위치가 맞도록 함
+        month_cols: list = []
         for m in range(1, 13):
+            if (m - 1) % 4 == 0:
+                month_cols = st.columns(4)
             with month_cols[(m - 1) % 4]:
                 with st.container(border=True):
                     st.markdown(f"**🌸 {m}월**")
