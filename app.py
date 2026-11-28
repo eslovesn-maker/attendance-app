@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import hmac
+import html
 import json
 import time
 import uuid
@@ -1654,8 +1655,14 @@ if meeting_names:
                     entries = sorted(monthly_groups[m], key=lambda x: x[0])
                     if entries:
                         for d_num, name, memo in entries:
-                            suffix = f" ({memo})" if memo else ""
-                            st.write(f"• **{member_label(name)}** — {m}월 {d_num}일{suffix}")
+                            memo_html = (
+                                f" <span style='color:#8A7A6C;'>({html.escape(memo)})</span>" if memo else ""
+                            )
+                            st.markdown(
+                                "<div style='white-space:nowrap; overflow-x:auto; font-size:0.82rem; line-height:1.7;'>"
+                                f"• <b>{html.escape(member_label(name))}</b> {d_num}일{memo_html}</div>",
+                                unsafe_allow_html=True,
+                            )
                     else:
                         st.caption("등록된 생일자 없음")
 
