@@ -893,6 +893,23 @@ def delete_photo_record(photo_row: dict) -> None:
 # ---------------------------------------------------------------------------
 # 통계
 # ---------------------------------------------------------------------------
+# 우리 교회 한 해: 12월에 시작해 이듬해 11월에 마무리
+FISCAL_MONTH_ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+
+def fiscal_year_series(dates) -> pd.Series:
+    """날짜 -> 연도(회계연도). 12월은 다음 해 연도로 셉니다. (예: 2026-12-06 -> 2027)"""
+    parsed = pd.to_datetime(pd.Series(dates).reset_index(drop=True), errors="coerce")
+    fy = parsed.dt.year + (parsed.dt.month == 12).astype(int)
+    fy.index = pd.Series(dates).index
+    return fy
+
+
+def fiscal_year_label(fy: int, with_range: bool = False) -> str:
+    base = f"{fy}년도"
+    return f"{base} ({fy - 1}.12 ~ {fy}.11)" if with_range else base
+
+
 def _month_frame(stat_df: pd.DataFrame) -> pd.DataFrame:
     """날짜에서 월(정수)을 뽑고, 날짜를 읽을 수 없는 행은 제외한 복사본."""
     work_df = stat_df.copy()
@@ -903,7 +920,7 @@ def _month_frame(stat_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
-    months = [f"{m}월" for m in range(1, 13)]
+    months = [f"{m}월" for m in FISCAL_MONTH_ORDER]
     priority = {"O": 3, "△": 2, "X": 1}
     symbol_map = {"O": "●", "△": "△", "X": "X"}
 
@@ -920,12 +937,12 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.Dat
     )
 
     grid_rows = []
-    month_present_counts = {m: 0 for m in range(1, 13)}
-    month_recorded_counts = {m: 0 for m in range(1, 13)}
+    month_present_counts = {m: 0 for m in FISCAL_MONTH_ORDER}
+    month_recorded_counts = {m: 0 for m in FISCAL_MONTH_ORDER}
 
     for idx, name in enumerate(all_names, start=1):
         row_data = {"NO.": idx, "이름": name}
-        for m in range(1, 13):
+        for m in FISCAL_MONTH_ORDER:
             status = best_status.get((name, m))
             if status is None:
                 row_data[f"{m}월"] = ""
@@ -938,7 +955,7 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.Dat
 
     total_row = {"NO.": "", "이름": "계"}
     trend_rows = []
-    for m in range(1, 13):
+    for m in FISCAL_MONTH_ORDER:
         present_cnt = month_present_counts[m]
         recorded_cnt = month_recorded_counts[m]
         total_row[f"{m}월"] = present_cnt
@@ -952,7 +969,7 @@ def build_monthly_grid(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.Dat
 
 
 def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple[pd.DataFrame, pd.DataFrame]:
-    months = [f"{m}월" for m in range(1, 13)]
+    months = [f"{m}월" for m in FISCAL_MONTH_ORDER]
     work_df = _month_frame(stat_df)
     all_names = list(dict.fromkeys(member_list + stat_df["이름"].dropna().unique().tolist()))
 
@@ -962,14 +979,14 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
     p_map = {k: int(v) for k, v in sums["기도부탁여부"].items()}
 
     grid_rows = []
-    month_t_totals = {m: 0 for m in range(1, 13)}
-    month_p_totals = {m: 0 for m in range(1, 13)}
+    month_t_totals = {m: 0 for m in FISCAL_MONTH_ORDER}
+    month_p_totals = {m: 0 for m in FISCAL_MONTH_ORDER}
 
     for idx, name in enumerate(all_names, start=1):
         row_data = {"NO.": idx, "이름": name}
         t_sum = 0
         p_sum = 0
-        for m in range(1, 13):
+        for m in FISCAL_MONTH_ORDER:
             t_cnt = t_map.get((name, m), 0)
             p_cnt = p_map.get((name, m), 0)
             t_sum += t_cnt
@@ -990,7 +1007,7 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
 
     total_row = {"NO.": "", "이름": "계"}
     trend_rows = []
-    for m in range(1, 13):
+    for m in FISCAL_MONTH_ORDER:
         total_row[f"{m}월"] = (
             f"{EMOJI_TESTIMONY}{month_t_totals[m]} {EMOJI_PRAYER}{month_p_totals[m]}"
             if (month_t_totals[m] or month_p_totals[m])
@@ -1007,7 +1024,7 @@ def build_monthly_tp_overview(stat_df: pd.DataFrame, member_list: list) -> tuple
     return grid_df, trend_df
 
 
-MONTH_LABELS = [f"{m}월" for m in range(1, 13)]
+MONTH_LABELS = [f"{m}월" for m in FISCAL_MONTH_ORDER]
 CHART_BG = "#FFFDF9"
 CHART_TEXT = "#5C4E44"
 CHART_GRID = "#EADFD0"
@@ -1040,7 +1057,7 @@ def render_rate_chart(trend_df: pd.DataFrame) -> None:
     """월별 출석률 막대 그래프: 1월~12월 순서, 가로 글씨, 막대 위 숫자, 0~100% 고정."""
     values = [float(trend_df["출석률(%)"].get(label, 0.0)) for label in MONTH_LABELS]
     if alt is None:
-        fallback = pd.DataFrame({"출석률(%)": values}, index=[f"{m:02d}월" for m in range(1, 13)])
+        fallback = pd.DataFrame({"출석률(%)": values}, index=[f"{i:02d}.{m}월" for i, m in enumerate(FISCAL_MONTH_ORDER, 1)])
         st.bar_chart(fallback, y="출석률(%)", color="#D96B43")
         return
 
@@ -1069,7 +1086,7 @@ def render_tp_chart(tp_trend_df: pd.DataFrame) -> None:
     """월별 간증·기도부탁 막대 그래프: 1월~12월 순서, 가로 글씨, 정수 눈금."""
     if alt is None:
         fallback = tp_trend_df.reindex(MONTH_LABELS).fillna(0)
-        fallback.index = [f"{m:02d}월" for m in range(1, 13)]
+        fallback.index = [f"{i:02d}.{m}월" for i, m in enumerate(FISCAL_MONTH_ORDER, 1)]
         st.bar_chart(fallback, y=["간증", "기도부탁"], color=["#D96B43", "#5B8FB9"])
         return
 
@@ -1866,23 +1883,20 @@ if meeting_names:
         if df.empty:
             st.info("🌱 아직 기록된 출석 데이터가 없습니다. '출석 체크 및 사진' 탭에서 데이터를 먼저 입력해 주세요.")
         else:
-            parsed_all_dates = pd.to_datetime(df["날짜"], errors="coerce")
-            available_years = sorted(
-                parsed_all_dates.dt.year.dropna().astype(int).unique().tolist(),
-                reverse=True,
-            )
-            year_options = ["전체 연도"] + [f"{y}년" for y in available_years]
-            selected_year_label = st.selectbox(
-                "🗓️ 조회 연도 필터",
-                year_options,
+            fiscal_all = fiscal_year_series(df["날짜"])
+            available_years = sorted(fiscal_all.dropna().astype(int).unique().tolist(), reverse=True)
+            selected_fy = st.selectbox(
+                "🗓️ 조회 연도 필터 (12월 ~ 이듬해 11월)",
+                [None] + available_years,
+                format_func=lambda y: "전체 연도" if y is None else fiscal_year_label(y, with_range=True),
                 key=f"year_filter_{selected_meeting}",
             )
+            selected_year_label = "전체 연도" if selected_fy is None else fiscal_year_label(selected_fy)
 
-            if selected_year_label == "전체 연도":
+            if selected_fy is None:
                 filtered_df = df.copy()
             else:
-                target_year = int(selected_year_label.replace("년", ""))
-                filtered_df = df[parsed_all_dates.dt.year == target_year].copy()
+                filtered_df = df[fiscal_all == selected_fy].copy()
 
             if filtered_df.empty:
                 st.info(f"🍃 {selected_year_label}에 해당하는 출석 기록이 없습니다.")
