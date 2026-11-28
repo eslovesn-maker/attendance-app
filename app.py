@@ -140,7 +140,7 @@ def apply_warm_theme() -> None:
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
-            gap: 6px !important;
+            gap: 5px !important;
             align-items: center !important;
             width: 100% !important;
         }}
@@ -154,9 +154,9 @@ def apply_warm_theme() -> None:
         div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
             width: auto !important;
             min-width: max-content !important;
-            padding: 5px 11px !important;
+            padding: 5px 8px !important;
             min-height: 2rem !important;
-            font-size: 0.84rem !important;
+            font-size: 0.82rem !important;
             line-height: 1.2 !important;
             border-radius: 999px !important;
             white-space: nowrap !important;
@@ -169,8 +169,8 @@ def apply_warm_theme() -> None:
             text-overflow: unset !important;
         }}
 
-        /* 사진 업로드: 안내 문구(용량·확장자·드래그)를 숨기고 버튼만 남겨 왼쪽 날짜 입력칸과 높이를 맞춤 */
-        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] {{
+        /* 사진 업로드: 안내 문구와 기본 버튼 글씨(↑ Upload)를 숨기고 '사진 업로드' 한 가지만 남김 */
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] {{
             padding: 0 !important;
             border: none !important;
             background: transparent !important;
@@ -179,13 +179,16 @@ def apply_warm_theme() -> None:
         div[data-testid="stFileUploaderDropzoneInstructions"] {{
             display: none !important;
         }}
-        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] button {{
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] button {{
             width: 100% !important;
             min-height: 2.5rem !important;
             font-size: 0 !important;
             border-radius: 10px !important;
         }}
-        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] button::after {{
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] button > * {{
+            display: none !important;
+        }}
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] button::after {{
             content: "📷 사진 업로드";
             font-size: 0.95rem;
             font-weight: 600;
@@ -320,7 +323,7 @@ def apply_warm_theme() -> None:
                 font-size: 0.85rem !important;
             }}
             div[data-testid="stVerticalBlock"]:has(> div.element-container .date-chips-anchor) div.stButton > button {{
-                padding: 4px 9px !important;
+                padding: 4px 7px !important;
                 font-size: 0.8rem !important;
             }}
         }}
@@ -1951,64 +1954,6 @@ if meeting_names:
             meeting_date = st.date_input("📅 모임 날짜 선택", key=date_input_key)
             current_date_iso = str(meeting_date)
 
-            if recorded_dates:
-                with st.container():
-                    st.markdown(
-                        "<div class='date-chips-anchor' style='font-size:0.84rem; color:#B83227; font-weight:600; margin-bottom:4px;'>"
-                        "📌 출석 기록 있는 날짜</div>",
-                        unsafe_allow_html=True,
-                    )
-                    shown_dates = recorded_dates[-12:]
-                    date_cols = st.columns(len(shown_dates))
-                    for idx, d_str in enumerate(shown_dates):
-                        with date_cols[idx]:
-                            st.button(
-                                f"● {format_short_date(d_str)}",
-                                key=f"red_btn_{selected_meeting}_{d_str}",
-                                on_click=_set_target_date,
-                                args=(d_str,),
-                            )
-                if len(recorded_dates) > 12:
-                    st.caption(f"최근 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
-
-                if current_date_iso in recorded_dates:
-                    if not st.session_state["confirm_delete_date"]:
-                        if st.button(
-                            f"🗑️ {format_short_date(current_date_iso)} 출석 기록 삭제",
-                            key=f"ask_del_date_{selected_meeting}_{current_date_iso}",
-                        ):
-                            st.session_state["confirm_delete_date"] = True
-                            st.rerun()
-                    else:
-                        st.warning(
-                            f"**{format_date_with_weekday(current_date_iso)}** 출석 기록을 삭제할까요?"
-                        )
-                        del_c1, del_c2 = st.columns(2)
-                        with del_c1:
-                            if st.button(
-                                "✅ 예, 기록 삭제",
-                                key=f"do_del_date_{selected_meeting}_{current_date_iso}",
-                            ):
-                                date_deleted = False
-                                try:
-                                    delete_attendance_by_date(selected_meeting, current_date_iso)
-                                    date_deleted = True
-                                except Exception as e:
-                                    st.error(f"기록을 삭제하지 못했습니다: {e}")
-                                st.session_state["confirm_delete_date"] = False
-                                if date_deleted:
-                                    st.success(f"{format_short_date(current_date_iso)} 출석 기록이 삭제되었습니다.")
-                                    st.rerun()
-                        with del_c2:
-                            if st.button(
-                                "취소",
-                                key=f"cancel_del_date_{selected_meeting}_{current_date_iso}",
-                            ):
-                                st.session_state["confirm_delete_date"] = False
-                                st.rerun()
-            else:
-                st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
-
         with col2:
             group_photos = st.file_uploader(
                 "📸 모임 단체 사진 업로드 (최대 3장)",
@@ -2016,6 +1961,65 @@ if meeting_names:
                 accept_multiple_files=True,
                 key=f"photo_{selected_meeting}_{meeting_date}",
             )
+
+        # 출석 기록 있는 날짜: 두 칸 아래 전체 폭을 써서 한 줄로 쭉 나열 (끝에 닿으면 줄바꿈)
+        if recorded_dates:
+            with st.container():
+                st.markdown(
+                    "<div class='date-chips-anchor' style='font-size:0.84rem; color:#B83227; font-weight:600; margin-bottom:4px;'>"
+                    "📌 출석 기록 있는 날짜</div>",
+                    unsafe_allow_html=True,
+                )
+                shown_dates = recorded_dates[-12:]
+                date_cols = st.columns(len(shown_dates))
+                for idx, d_str in enumerate(shown_dates):
+                    with date_cols[idx]:
+                        st.button(
+                            f"● {format_short_date(d_str)}",
+                            key=f"red_btn_{selected_meeting}_{d_str}",
+                            on_click=_set_target_date,
+                            args=(d_str,),
+                        )
+            if len(recorded_dates) > 12:
+                st.caption(f"최근 12개 기록일 표시 (전체 {len(recorded_dates)}건)")
+
+            if current_date_iso in recorded_dates:
+                if not st.session_state["confirm_delete_date"]:
+                    if st.button(
+                        f"🗑️ {format_short_date(current_date_iso)} 출석 기록 삭제",
+                        key=f"ask_del_date_{selected_meeting}_{current_date_iso}",
+                    ):
+                        st.session_state["confirm_delete_date"] = True
+                        st.rerun()
+                else:
+                    st.warning(
+                        f"**{format_date_with_weekday(current_date_iso)}** 출석 기록을 삭제할까요?"
+                    )
+                    del_c1, del_c2 = st.columns(2)
+                    with del_c1:
+                        if st.button(
+                            "✅ 예, 기록 삭제",
+                            key=f"do_del_date_{selected_meeting}_{current_date_iso}",
+                        ):
+                            date_deleted = False
+                            try:
+                                delete_attendance_by_date(selected_meeting, current_date_iso)
+                                date_deleted = True
+                            except Exception as e:
+                                st.error(f"기록을 삭제하지 못했습니다: {e}")
+                            st.session_state["confirm_delete_date"] = False
+                            if date_deleted:
+                                st.success(f"{format_short_date(current_date_iso)} 출석 기록이 삭제되었습니다.")
+                                st.rerun()
+                    with del_c2:
+                        if st.button(
+                            "취소",
+                            key=f"cancel_del_date_{selected_meeting}_{current_date_iso}",
+                        ):
+                            st.session_state["confirm_delete_date"] = False
+                            st.rerun()
+        else:
+            st.caption("아직 출석 기록이 있는 날짜가 없습니다.")
 
         date_str = str(meeting_date)
         date_with_day = format_date_with_weekday(date_str)
