@@ -179,10 +179,13 @@ def apply_warm_theme() -> None:
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             width: auto !important;
             min-width: 0 !important;
-            flex: 3 1 0 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {{
             flex: 5 1 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {{
+            flex: 6 1 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {{
+            flex: 8 1 0 !important;
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .tp-row-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {{
             flex-wrap: nowrap !important;
@@ -1484,15 +1487,18 @@ if meeting_names:
                         ]
 
                     with st.container():
-                        st.markdown(
-                            "<div class='tp-row-anchor' style='font-weight:700; margin:6px 0 2px 0;'>"
-                            f"🍃 {html.escape(member_label(member))}</div>",
-                            unsafe_allow_html=True,
-                        )
+                        st.markdown("<div class='tp-row-anchor'></div>", unsafe_allow_html=True)
                         if HAS_PILLS:
-                            r_col, tp_col = st.columns([5, 3])
+                            n_col, r_col, tp_col = st.columns([6, 8, 5])
                         else:
-                            r_col, t_col, p_col = st.columns([5, 3, 3])
+                            n_col, r_col, t_col, p_col = st.columns([6, 8, 5, 5])
+
+                        with n_col:
+                            st.markdown(
+                                "<div style='font-weight:700; font-size:0.92rem; line-height:1.3; word-break:keep-all;'>"
+                                f"🍃 {html.escape(member_label(member))}</div>",
+                                unsafe_allow_html=True,
+                            )
 
                         with r_col:
                             attendance_status[member] = st.radio(
@@ -1526,7 +1532,7 @@ if meeting_names:
                                     key=prayer_key,
                                     help="기도부탁",
                                 )
-                    st.markdown("<hr style='margin:4px 0 8px 0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
+                    st.markdown("<hr style='margin:8px 0 6px 0; border:none; border-top:1px dashed #EFE5D8;'>", unsafe_allow_html=True)
 
                 note_key = f"note_{selected_meeting}_{date_str}"
                 if note_key not in st.session_state:
